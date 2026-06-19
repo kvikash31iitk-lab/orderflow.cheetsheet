@@ -7,11 +7,17 @@ import type { FootprintCandle } from "../types/orderflow";
 export const MAX_CANDLES = 3000;
 export const MAX_OUTPUTS = 5000;
 export const MAX_SCRIPT_LENGTH = 50000;
-// Hard per-run sandbox budget. The primary fix for false timeouts is removing the
-// O(n^2) history allocation in runtime.ts (see makeCtx); this 500ms ceiling (raised
-// from 250ms) is headroom for legitimately heavier scripts and slower client hardware,
-// while still bounding runaway/infinite-loop scripts.
+// Tight per-run sandbox budget for WARM runs (raised 250 -> 500 for headroom over the
+// structured-clone of the candle payload). The O(n^2) history allocation in runtime.ts
+// (see makeCtx) is the main false-timeout fix; this still bounds runaway/infinite loops.
 export const DEFAULT_TIMEOUT_MS = 500;
+// The FIRST run on a freshly-created sandbox worker also pays a one-time worker spin-up
+// + JIT cost (measured ~600ms on a fast machine over 3000 real footprint candles, more
+// on slow hardware) ON TOP of the script. Without a separate budget that cold run trips
+// the 500ms ceiling and a normal indicator (e.g. Delta Spike) gets falsely auto-disabled
+// the instant it's enabled. The first run gets this larger budget; once the worker has
+// answered once it is "warm" and reverts to DEFAULT_TIMEOUT_MS.
+export const COLD_START_TIMEOUT_MS = 2500;
 
 export type IndicatorExecutionMode = "sandbox" | "direct" | "disabled";
 

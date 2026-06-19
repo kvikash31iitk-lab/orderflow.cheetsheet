@@ -2,15 +2,21 @@
 // single-threaded), enforces a hard timeout, and on timeout TERMINATES the hung
 // worker (recreated lazily on the next run) and returns a clean "Indicator timed out".
 import type { IndicatorRunner, IndicatorRunRequest, IndicatorRunResult } from "./types";
-import { DEFAULT_TIMEOUT_MS } from "./types";
+import { DEFAULT_TIMEOUT_MS, COLD_START_TIMEOUT_MS } from "./types";
 
 export class SandboxRunner implements IndicatorRunner {
   private worker: Worker | null = null;
   private seq = 0;
   // serialize runs onto the single worker (each script must finish/terminate first)
   private chain: Promise<unknown> = Promise.resolve();
+  // a freshly-created worker pays a one-time spin-up + JIT cost unrelated to the script;
+  // the FIRST run gets coldTimeoutMs, then warm runs use the tight timeoutMs.
+  private warmedUp = false;
 
-  constructor(private timeoutMs: number = DEFAULT_TIMEOUT_MS) {}
+  constructor(
+    private timeoutMs: number = DEFAULT_TIMEOUT_MS,
+    private coldTimeoutMs: number = COLD_START_TIMEOUT_MS,
+  ) {}
 
   private ensureWorker(): Worker {
     if (!this.worker) {
@@ -54,17 +60,20 @@ export class SandboxRunner implements IndicatorRunner {
       const onMessage = (ev: MessageEvent) => {
         const data = ev.data as { id: number; result: IndicatorRunResult };
         if (!data || data.id !== id) return;
+        this.warmedUp = true; // the worker answered -> it is spun up + JIT-warm now
         finish(data.result);
       };
       const onError = (ev: ErrorEvent) => {
         finish({ ok: false, outputs: [], error: ev.message || "Worker error" });
       };
 
+      // first run on a new worker gets the generous cold budget; warm runs the tight one.
+      const budget = this.warmedUp ? this.timeoutMs : this.coldTimeoutMs;
       const timer = setTimeout(() => {
         // hung script: kill the worker so the loop can't keep running; recreated next run.
         this.terminate();
         finish({ ok: false, outputs: [], error: "Indicator timed out" });
-      }, this.timeoutMs);
+      }, budget);
 
       worker.addEventListener("message", onMessage);
       worker.addEventListener("error", onError);
@@ -82,5 +91,6 @@ export class SandboxRunner implements IndicatorRunner {
       this.worker.terminate();
       this.worker = null;
     }
+    this.warmedUp = false; // the next worker will be cold again
   }
 }
