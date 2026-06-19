@@ -42,6 +42,7 @@ export default function FootprintChart() {
   const setSettings = useStore((s) => s.setSettings);
   const indicatorOutputs = useStore((s) => s.indicatorOutputs);
   const pendingAnchorId = useStore((s) => s.pendingAnchorIndicatorId);
+  const pendingAnchorTool = useStore((s) => s.pendingAnchorTool);
   const cancelAnchorPick = useStore((s) => s.cancelIndicatorAnchorPick);
   const lastSymbolRef = useRef(symbol);
 
@@ -69,13 +70,16 @@ export default function FootprintChart() {
     series.setData(toData(s.candles));
     registerChart("main", { chart, series });
 
-    // click-to-anchor: only acts while an Anchored VWAP is in anchor-pick mode.
+    // click-to-anchor: acts only while a placement mode is active. Two modes:
+    //  - pendingAnchorTool "anchored-vwap": CREATE a new AVWAP at the clicked candle.
+    //  - pendingAnchorIndicatorId: RE-ANCHOR that existing instance.
     // Reads the LATEST store state at click time (getState) so the once-subscribed
     // handler never holds a stale pending id / candle list.
     const onChartClick = (param: MouseEventParams) => {
       const st = useStore.getState();
+      const toolMode = st.pendingAnchorTool === "anchored-vwap";
       const pendingId = st.pendingAnchorIndicatorId;
-      if (!pendingId) return;
+      if (!toolMode && !pendingId) return;
       // resolve the clicked time -> epoch ms (param.time when on a bar, else from x)
       let ms: number | null = null;
       if (typeof param.time === "number") {
@@ -84,7 +88,7 @@ export default function FootprintChart() {
         const t = chart.timeScale().coordinateToTime(param.point.x);
         if (typeof t === "number") ms = t * 1000;
       }
-      if (ms == null) return;
+      if (ms == null) return; // unresolved click -> keep placement mode active, do nothing
       const cs = st.candles;
       if (!cs.length) return;
       // map to the nearest candle by startTime
@@ -97,7 +101,11 @@ export default function FootprintChart() {
           nearest = cs[i];
         }
       }
-      st.setIndicatorAnchor(pendingId, nearest.startTime, st.symbol);
+      if (toolMode) {
+        st.addAnchoredVwapAt(nearest.startTime, st.symbol);
+      } else if (pendingId) {
+        st.setIndicatorAnchor(pendingId, nearest.startTime, st.symbol);
+      }
     };
     chart.subscribeClick(onChartClick);
 
@@ -185,7 +193,7 @@ export default function FootprintChart() {
   return (
     <div className="relative h-full w-full">
       <div ref={hostRef} className="absolute inset-0" />
-      {pendingAnchorId && (
+      {(pendingAnchorId || pendingAnchorTool) && (
         // pointer-events-none wrapper so chart clicks pass through; only the small
         // banner (incl. Cancel) is clickable.
         <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center">

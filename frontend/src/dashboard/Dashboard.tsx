@@ -64,8 +64,9 @@ function PanelToggle({ label, on, set }: { label: string; on: boolean; set: Disp
 
 export default function Dashboard() {
   const [view, setView] = useState<View>("terminal");
-  const [showDom, setShowDom] = useState(true);
-  const [showHist, setShowHist] = useState(true);
+  // DOM ladder + Delta Histogram default hidden (dashboard default); the rest visible.
+  const [showDom, setShowDom] = useState(false);
+  const [showHist, setShowHist] = useState(false);
   const [showCum, setShowCum] = useState(true);
   const [showScanner, setShowScanner] = useState(true);
   const setBlockSizeModalOpen = useStore((s) => s.setBlockSizeModalOpen);

@@ -47,7 +47,7 @@ export const ANCHORED_VWAP_SCRIPT = `indicator("Anchored VWAP", {
     anchorTime: 0,       // epoch ms of the picked anchor candle (0 = not anchored yet)
     anchorSymbol: "",    // symbol the anchor was picked on (guards cross-symbol draw)
     source: "hlc3",     // "hlc3" | "close" | "ohlc4"
-    showBands: true,
+    showBands: false,   // bands off by default; set true to also plot +/- SD bands
     bandStd1: 1,
     bandStd2: 2
   },

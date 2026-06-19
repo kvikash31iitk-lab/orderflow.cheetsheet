@@ -66,6 +66,13 @@ function makeIndicator(script: string, enabled: boolean): IndicatorInstance {
   };
 }
 
+// Distinguishable display name for a new Anchored VWAP: "Anchored VWAP",
+// "Anchored VWAP 2", ... (instance.name only; the script's indicator() name is unchanged).
+function anchoredVwapName(existing: IndicatorInstance[]): string {
+  const n = existing.filter((i) => i.kind === "anchored-vwap").length;
+  return n === 0 ? "Anchored VWAP" : `Anchored VWAP ${n + 1}`;
+}
+
 interface PersistedIndicators {
   indicators: IndicatorInstance[];
   mode: IndicatorExecutionMode;
@@ -188,8 +195,10 @@ interface State {
   indicatorExecutionMode: IndicatorExecutionMode;
   indicatorBusy: boolean;
   indicatorErrors: Record<string, string | null>;
-  // id of the indicator currently waiting for a chart-click anchor (null = not picking)
+  // id of the existing indicator waiting for a chart-click re-anchor (null = not picking)
   pendingAnchorIndicatorId: string | null;
+  // toolbar placement mode: drop a NEW Anchored VWAP on the next candle click (null = off)
+  pendingAnchorTool: "anchored-vwap" | null;
 
   setSource: (src: "truedata" | "databento") => void;
   setSymbol: (s: string) => void;
@@ -217,6 +226,8 @@ interface State {
   beginIndicatorAnchorPick: (indicatorId: string) => void;
   cancelIndicatorAnchorPick: () => void;
   setIndicatorAnchor: (indicatorId: string, anchorTime: number, anchorSymbol?: string) => void;
+  beginAnchoredVwapPlacement: () => void;
+  addAnchoredVwapAt: (anchorTime: number, anchorSymbol?: string) => void;
   reset: () => void;
 }
 
@@ -232,8 +243,9 @@ function upsert(candles: FootprintCandle[], c: FootprintCandle): FootprintCandle
 const persistedIndicators = loadPersistedIndicators();
 
 export const useStore = create<State>((set, get) => ({
-  source: "truedata",
-  symbol: "NIFTY-I",
+  // dashboard defaults (no persistence for these yet -> these are the fresh-open values)
+  source: "databento",
+  symbol: "GC.V.0",
   timeframe: "2m",
   connected: false,
   status: null,
@@ -244,8 +256,8 @@ export const useStore = create<State>((set, get) => ({
   replayActive: false,
   footprintMode: "bidAsk",
   consolidation: 1,
-  chartDisplayMode: "footprint",
-  theme: "dark",
+  chartDisplayMode: "candle",
+  theme: "light",
   settings: DEFAULT_SETTINGS,
   blockSizeModalOpen: false,
   positions: [],
@@ -259,6 +271,7 @@ export const useStore = create<State>((set, get) => ({
   indicatorBusy: false,
   indicatorErrors: {},
   pendingAnchorIndicatorId: null,
+  pendingAnchorTool: null,
 
   setSource: (src) => {
     // Use the CANONICAL upper-case symbol: the backend emits live candles as
@@ -392,10 +405,13 @@ export const useStore = create<State>((set, get) => ({
 
   // ------------------------------------------------------------- indicators
   addIndicator: (script) => {
+    const cur = get();
     const ind = makeIndicator(script, true);
-    const indicators = [...get().indicators, ind];
+    // give multiple Anchored VWAPs distinguishable names ("Anchored VWAP 2", ...)
+    if (ind.kind === "anchored-vwap") ind.name = anchoredVwapName(cur.indicators);
+    const indicators = [...cur.indicators, ind];
     set({ indicators });
-    persistIndicators(indicators, get().indicatorExecutionMode);
+    persistIndicators(indicators, cur.indicatorExecutionMode);
     scheduleRecompute(50);
   },
 
@@ -522,8 +538,11 @@ export const useStore = create<State>((set, get) => ({
   },
 
   // ----- interactive Anchored VWAP anchor picking (TradingView-style) -----
-  beginIndicatorAnchorPick: (indicatorId) => set({ pendingAnchorIndicatorId: indicatorId }),
-  cancelIndicatorAnchorPick: () => set({ pendingAnchorIndicatorId: null }),
+  // re-anchor an EXISTING instance (panel "Pick Anchor")
+  beginIndicatorAnchorPick: (indicatorId) =>
+    set({ pendingAnchorIndicatorId: indicatorId, pendingAnchorTool: null }),
+  // cancel either mode (re-anchor or new-placement)
+  cancelIndicatorAnchorPick: () => set({ pendingAnchorIndicatorId: null, pendingAnchorTool: null }),
   setIndicatorAnchor: (indicatorId, anchorTime, anchorSymbol) => {
     const cur = get();
     const sym = anchorSymbol ?? cur.symbol;
@@ -542,7 +561,26 @@ export const useStore = create<State>((set, get) => ({
     );
     const errs = { ...cur.indicatorErrors };
     delete errs[indicatorId];
-    set({ indicators, indicatorErrors: errs, pendingAnchorIndicatorId: null });
+    set({ indicators, indicatorErrors: errs, pendingAnchorIndicatorId: null, pendingAnchorTool: null });
+    persistIndicators(indicators, cur.indicatorExecutionMode);
+    scheduleRecompute(50);
+  },
+
+  // toolbar tool: arm placement mode -> the next candle click CREATES a fresh AVWAP
+  beginAnchoredVwapPlacement: () =>
+    set({ pendingAnchorTool: "anchored-vwap", pendingAnchorIndicatorId: null }),
+  addAnchoredVwapAt: (anchorTime, anchorSymbol) => {
+    const cur = get();
+    const sym = anchorSymbol ?? cur.symbol;
+    // a brand-new, independent instance anchored at the clicked candle
+    const base = makeIndicator(ANCHORED_VWAP_SCRIPT, true);
+    const ind: IndicatorInstance = {
+      ...base,
+      name: anchoredVwapName(cur.indicators),
+      inputs: { ...base.inputs, anchorTime, anchorSymbol: sym },
+    };
+    const indicators = [...cur.indicators, ind];
+    set({ indicators, pendingAnchorTool: null });
     persistIndicators(indicators, cur.indicatorExecutionMode);
     scheduleRecompute(50);
   },

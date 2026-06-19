@@ -52,6 +52,9 @@ export default function Header() {
   const setBlockSizeModalOpen = useStore((s) => s.setBlockSizeModalOpen);
   const setSettings = useStore((s) => s.setSettings);
   const candles = useStore((s) => s.candles);
+  const pendingAnchorTool = useStore((s) => s.pendingAnchorTool);
+  const beginAnchoredVwapPlacement = useStore((s) => s.beginAnchoredVwapPlacement);
+  const cancelAnchorPick = useStore((s) => s.cancelIndicatorAnchorPick);
   const [symbols, setSymbols] = useState<string[]>(["NIFTY-I", "BANKNIFTY-I", "FINNIFTY-I", "MIDCPNIFTY-I"]);
   const [tfs, setTfs] = useState<string[]>(DEFAULT_TFS);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -203,6 +206,20 @@ export default function Header() {
         className="rounded border border-terminal-border bg-terminal-bg px-2 py-1 text-xs font-semibold italic hover:bg-terminal-border"
       >
         ƒx
+      </button>
+
+      <button
+        onClick={() =>
+          pendingAnchorTool === "anchored-vwap" ? cancelAnchorPick() : beginAnchoredVwapPlacement()
+        }
+        title="Anchored VWAP — click, then click a candle to drop a new anchored VWAP"
+        className={`rounded border px-2 py-1 text-xs font-semibold ${
+          pendingAnchorTool === "anchored-vwap"
+            ? "border-flow-exhaustion bg-flow-exhaustion/20 text-flow-exhaustion"
+            : "border-terminal-border bg-terminal-bg text-terminal-text hover:bg-terminal-border"
+        }`}
+      >
+        AVWAP
       </button>
 
       <div className="ml-2 flex items-center gap-5">
