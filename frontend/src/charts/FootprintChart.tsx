@@ -5,6 +5,7 @@ import {
   LineStyle,
   type IChartApi,
   type IPriceLine,
+  type MouseEventParams,
   type UTCTimestamp,
 } from "lightweight-charts";
 import { useStore } from "../store/useStore";
@@ -40,6 +41,8 @@ export default function FootprintChart() {
   const symbolConfigs = useStore((s) => s.symbolConfigs);
   const setSettings = useStore((s) => s.setSettings);
   const indicatorOutputs = useStore((s) => s.indicatorOutputs);
+  const pendingAnchorId = useStore((s) => s.pendingAnchorIndicatorId);
+  const cancelAnchorPick = useStore((s) => s.cancelIndicatorAnchorPick);
   const lastSymbolRef = useRef(symbol);
 
   // init the chart + custom series once
@@ -65,7 +68,41 @@ export default function FootprintChart() {
     seriesRef.current = series;
     series.setData(toData(s.candles));
     registerChart("main", { chart, series });
+
+    // click-to-anchor: only acts while an Anchored VWAP is in anchor-pick mode.
+    // Reads the LATEST store state at click time (getState) so the once-subscribed
+    // handler never holds a stale pending id / candle list.
+    const onChartClick = (param: MouseEventParams) => {
+      const st = useStore.getState();
+      const pendingId = st.pendingAnchorIndicatorId;
+      if (!pendingId) return;
+      // resolve the clicked time -> epoch ms (param.time when on a bar, else from x)
+      let ms: number | null = null;
+      if (typeof param.time === "number") {
+        ms = param.time * 1000;
+      } else if (param.point) {
+        const t = chart.timeScale().coordinateToTime(param.point.x);
+        if (typeof t === "number") ms = t * 1000;
+      }
+      if (ms == null) return;
+      const cs = st.candles;
+      if (!cs.length) return;
+      // map to the nearest candle by startTime
+      let nearest = cs[0];
+      let best = Math.abs(cs[0].startTime - ms);
+      for (let i = 1; i < cs.length; i++) {
+        const d = Math.abs(cs[i].startTime - ms);
+        if (d < best) {
+          best = d;
+          nearest = cs[i];
+        }
+      }
+      st.setIndicatorAnchor(pendingId, nearest.startTime, st.symbol);
+    };
+    chart.subscribeClick(onChartClick);
+
     return () => {
+      chart.unsubscribeClick(onChartClick);
       unregisterChart("main");
       entryLineRef.current = null;
       chart.remove();
@@ -148,6 +185,22 @@ export default function FootprintChart() {
   return (
     <div className="relative h-full w-full">
       <div ref={hostRef} className="absolute inset-0" />
+      {pendingAnchorId && (
+        // pointer-events-none wrapper so chart clicks pass through; only the small
+        // banner (incl. Cancel) is clickable.
+        <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center">
+          <div className="pointer-events-auto flex items-center gap-2 rounded border border-flow-exhaustion/60 bg-terminal-panel/95 px-3 py-1.5 text-xs text-terminal-text shadow-lg shadow-black/40">
+            <span className="text-flow-exhaustion">◎</span>
+            <span>Click a candle to anchor Anchored VWAP</span>
+            <button
+              onClick={cancelAnchorPick}
+              className="rounded border border-terminal-border px-2 py-0.5 text-[11px] text-terminal-muted hover:bg-terminal-border"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

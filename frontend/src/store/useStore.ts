@@ -22,7 +22,7 @@ import type {
 } from "../indicators/types";
 import { runIndicators, disposeSandbox } from "../indicators/engine";
 import { parseIndicatorMeta } from "../indicators/runtime";
-import { DELTA_SPIKE_SCRIPT } from "../indicators/examples";
+import { DELTA_SPIKE_SCRIPT, ANCHORED_VWAP_SCRIPT } from "../indicators/examples";
 
 export const DEFAULT_SETTINGS: FootprintSettings = {
   tickMultiplier: 1,
@@ -62,6 +62,7 @@ function makeIndicator(script: string, enabled: boolean): IndicatorInstance {
     createdAt: ts,
     updatedAt: ts,
     lastError: meta.error ?? null,
+    kind: meta.kind,
   };
 }
 
@@ -70,23 +71,59 @@ interface PersistedIndicators {
   mode: IndicatorExecutionMode;
 }
 
+// Migrate a Phase-1 Anchored VWAP instance (anchorMode/anchorIndex, no anchorTime) to the
+// Phase-2 click-to-anchor script. Preserves id/enabled/createdAt + compatible inputs
+// (source/showBands/bandStd1/bandStd2); resets the anchor so the user must EXPLICITLY pick
+// a candle (no silent first-candle anchor). Non-AVWAP instances pass through unchanged.
+function migrateAnchoredVwap(i: IndicatorInstance): IndicatorInstance {
+  const script = typeof i.script === "string" ? i.script : "";
+  const isOldAvwap =
+    /anchorMode/.test(script) && !/anchorTime/.test(script) && /["']Anchored VWAP["']/.test(script);
+  if (!isOldAvwap) return i;
+  const oldIn: Record<string, number | string | boolean> = i.inputs || {};
+  const inputs: Record<string, number | string | boolean> = { anchorTime: 0, anchorSymbol: "" };
+  for (const k of ["source", "showBands", "bandStd1", "bandStd2"]) {
+    const v = oldIn[k];
+    if (v !== undefined) inputs[k] = v;
+  }
+  return {
+    ...i,
+    name: "Anchored VWAP",
+    script: ANCHORED_VWAP_SCRIPT,
+    overlay: true,
+    inputs,
+    kind: "anchored-vwap",
+    updatedAt: Date.now(),
+    lastError: null,
+  };
+}
+
 function loadPersistedIndicators(): PersistedIndicators {
   try {
     const raw = localStorage.getItem(INDICATORS_LS_KEY);
     if (raw) {
       const p = JSON.parse(raw) as Partial<PersistedIndicators>;
+      let migrated = false;
       const indicators = (Array.isArray(p.indicators)
         ? p.indicators.filter((i) => i && typeof i.id === "string" && typeof i.script === "string")
         : []
-      ).map((i) =>
-        // Clear a STALE "Indicator timed out" error persisted before the perf fix so the
-        // panel doesn't keep showing a timeout that no longer happens. The indicator stays
-        // in its saved enabled/disabled state; the user just sees it clean (and re-enabling
-        // recomputes it fresh). Non-timeout errors are preserved.
-        i.lastError && /timed out/i.test(i.lastError) ? { ...i, lastError: null } : i,
-      );
+      )
+        .map((i) => {
+          const m = migrateAnchoredVwap(i);
+          if (m !== i) migrated = true;
+          return m;
+        })
+        .map((i) =>
+          // Clear a STALE "Indicator timed out" error persisted before the perf fix so the
+          // panel doesn't keep showing a timeout that no longer happens. The indicator stays
+          // in its saved enabled/disabled state; the user just sees it clean (and re-enabling
+          // recomputes it fresh). Non-timeout errors are preserved.
+          i.lastError && /timed out/i.test(i.lastError) ? { ...i, lastError: null } : i,
+        );
       const mode: IndicatorExecutionMode =
         p.mode === "direct" || p.mode === "disabled" || p.mode === "sandbox" ? p.mode : "sandbox";
+      // make the migration durable so old Phase-1 scripts don't linger in storage
+      if (migrated) persistIndicators(indicators, mode);
       return { indicators, mode };
     }
   } catch {
@@ -151,6 +188,8 @@ interface State {
   indicatorExecutionMode: IndicatorExecutionMode;
   indicatorBusy: boolean;
   indicatorErrors: Record<string, string | null>;
+  // id of the indicator currently waiting for a chart-click anchor (null = not picking)
+  pendingAnchorIndicatorId: string | null;
 
   setSource: (src: "truedata" | "databento") => void;
   setSymbol: (s: string) => void;
@@ -174,6 +213,10 @@ interface State {
   toggleIndicator: (id: string) => void;
   setIndicatorExecutionMode: (mode: IndicatorExecutionMode) => void;
   recomputeIndicators: () => Promise<void>;
+  // interactive anchor picking (TradingView-style Anchored VWAP)
+  beginIndicatorAnchorPick: (indicatorId: string) => void;
+  cancelIndicatorAnchorPick: () => void;
+  setIndicatorAnchor: (indicatorId: string, anchorTime: number, anchorSymbol?: string) => void;
   reset: () => void;
 }
 
@@ -215,6 +258,7 @@ export const useStore = create<State>((set, get) => ({
   indicatorExecutionMode: persistedIndicators.mode,
   indicatorBusy: false,
   indicatorErrors: {},
+  pendingAnchorIndicatorId: null,
 
   setSource: (src) => {
     // Use the CANONICAL upper-case symbol: the backend emits live candles as
@@ -365,6 +409,7 @@ export const useStore = create<State>((set, get) => ({
           ...next,
           name: meta.name,
           overlay: meta.overlay,
+          kind: meta.kind,
           // keep any user-set values for inputs the (new) script still declares
           inputs: { ...meta.inputs, ...(patch.inputs ?? ind.inputs) },
           lastError: meta.error ?? null,
@@ -378,11 +423,18 @@ export const useStore = create<State>((set, get) => ({
   },
 
   removeIndicator: (id) => {
-    const indicators = get().indicators.filter((i) => i.id !== id);
-    const errs = { ...get().indicatorErrors };
+    const cur = get();
+    const indicators = cur.indicators.filter((i) => i.id !== id);
+    const errs = { ...cur.indicatorErrors };
     delete errs[id];
-    set({ indicators, indicatorErrors: errs });
-    persistIndicators(indicators, get().indicatorExecutionMode);
+    // removing the instance drops its anchor (stored in inputs); also cancel an
+    // in-progress anchor pick if it targeted this indicator.
+    set({
+      indicators,
+      indicatorErrors: errs,
+      pendingAnchorIndicatorId: cur.pendingAnchorIndicatorId === id ? null : cur.pendingAnchorIndicatorId,
+    });
+    persistIndicators(indicators, cur.indicatorExecutionMode);
     scheduleRecompute(50);
   },
 
@@ -467,6 +519,32 @@ export const useStore = create<State>((set, get) => ({
       if (seq !== recomputeSeq) return;
       set({ indicatorBusy: false });
     }
+  },
+
+  // ----- interactive Anchored VWAP anchor picking (TradingView-style) -----
+  beginIndicatorAnchorPick: (indicatorId) => set({ pendingAnchorIndicatorId: indicatorId }),
+  cancelIndicatorAnchorPick: () => set({ pendingAnchorIndicatorId: null }),
+  setIndicatorAnchor: (indicatorId, anchorTime, anchorSymbol) => {
+    const cur = get();
+    const sym = anchorSymbol ?? cur.symbol;
+    const indicators = cur.indicators.map((i) =>
+      i.id === indicatorId
+        ? {
+            // write the anchor into THIS instance's inputs (override script defaults);
+            // preserve any other inputs the user set. updatedAt + cleared error so the
+            // row reflects the fresh anchor.
+            ...i,
+            inputs: { ...i.inputs, anchorTime, anchorSymbol: sym },
+            updatedAt: Date.now(),
+            lastError: null,
+          }
+        : i,
+    );
+    const errs = { ...cur.indicatorErrors };
+    delete errs[indicatorId];
+    set({ indicators, indicatorErrors: errs, pendingAnchorIndicatorId: null });
+    persistIndicators(indicators, cur.indicatorExecutionMode);
+    scheduleRecompute(50);
   },
 
   reset: () => set({ candles: [], alerts: [], replay: null, replayActive: false }),

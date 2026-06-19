@@ -31,6 +31,9 @@ export interface IndicatorInstance {
   createdAt: number;
   updatedAt: number;
   lastError?: string | null;
+  // coarse classification derived from the script (e.g. "anchored-vwap") so the panel
+  // can offer tool-specific UI (anchor picking) without string-matching the name.
+  kind?: string;
 }
 
 export interface IndicatorRunRequest {

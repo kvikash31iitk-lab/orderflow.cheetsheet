@@ -44,9 +44,9 @@ export const CVD_MA_SCRIPT = `indicator("CVD MA", {
 export const ANCHORED_VWAP_SCRIPT = `indicator("Anchored VWAP", {
   overlay: true,
   inputs: {
-    anchorMode: "visibleStart", // "visibleStart" | "barIndex" | "sessionStart"
-    anchorIndex: 0,             // used when anchorMode === "barIndex"
-    source: "hlc3",            // "hlc3" | "close" | "ohlc4"
+    anchorTime: 0,       // epoch ms of the picked anchor candle (0 = not anchored yet)
+    anchorSymbol: "",    // symbol the anchor was picked on (guards cross-symbol draw)
+    source: "hlc3",     // "hlc3" | "close" | "ohlc4"
     showBands: true,
     bandStd1: 1,
     bandStd2: 2
@@ -57,27 +57,20 @@ export const ANCHORED_VWAP_SCRIPT = `indicator("Anchored VWAP", {
     if (!candles || candles.length === 0) return;
     const inp = ctx.inputs;
 
-    // ---- resolve the anchor candle index ----
-    let start = 0;
-    if (inp.anchorMode === "barIndex") {
-      const idx = Math.floor(Number(inp.anchorIndex));
-      start = Math.max(0, Math.min(candles.length - 1, Number.isFinite(idx) ? idx : 0));
-    } else if (inp.anchorMode === "sessionStart") {
-      // anchor at the first candle of the latest calendar day in the loaded data:
-      // walk back from the last candle until the day changes.
-      const last = new Date(candles[candles.length - 1].startTime);
-      const y = last.getFullYear(), m = last.getMonth(), d = last.getDate();
-      for (let i = candles.length - 1; i >= 0; i--) {
-        const di = new Date(candles[i].startTime);
-        if (di.getFullYear() !== y || di.getMonth() !== m || di.getDate() !== d) {
-          start = i + 1;
-          break;
-        }
-      }
+    // anchor belongs to a different symbol -> draw nothing (avoid a misleading line)
+    const anchorSym = String(inp.anchorSymbol || "");
+    if (anchorSym && anchorSym !== ctx.symbol) return;
+
+    // need a picked anchor; without one, draw nothing so the panel can prompt the user
+    const anchorTime = Number(inp.anchorTime);
+    if (!Number.isFinite(anchorTime) || anchorTime <= 0) return;
+
+    // map the anchor to the first candle at/after anchorTime in the CURRENT timeframe
+    let start = -1;
+    for (let i = 0; i < candles.length; i++) {
+      if (candles[i].startTime >= anchorTime) { start = i; break; }
     }
-    // "visibleStart" (default): first loaded candle -> start stays 0. NOTE: true
-    // viewport-left anchoring is not possible yet (the runtime does not expose the
-    // chart's visible range), so this anchors from the first LOADED candle.
+    if (start < 0) return; // anchor is after every loaded candle -> nothing to plot
 
     // ---- price + volume helpers ----
     function priceOf(c) {
@@ -123,10 +116,10 @@ export const ANCHORED_VWAP_SCRIPT = `indicator("Anchored VWAP", {
     // ---- plot everything on the price pane ----
     ctx.plotLine("Anchored VWAP", vwapPts, { color: "#f59e0b", width: 2, pane: "price" });
     if (inp.showBands) {
-      ctx.plotLine("AVWAP +1σ", up1, { color: "#d9a441", width: 1, opacity: 0.75, pane: "price" });
-      ctx.plotLine("AVWAP -1σ", dn1, { color: "#d9a441", width: 1, opacity: 0.75, pane: "price" });
-      ctx.plotLine("AVWAP +2σ", up2, { color: "#9a6a1f", width: 1, opacity: 0.55, pane: "price" });
-      ctx.plotLine("AVWAP -2σ", dn2, { color: "#9a6a1f", width: 1, opacity: 0.55, pane: "price" });
+      ctx.plotLine("AVWAP +1 SD", up1, { color: "#d9a441", width: 1, opacity: 0.75, pane: "price" });
+      ctx.plotLine("AVWAP -1 SD", dn1, { color: "#d9a441", width: 1, opacity: 0.75, pane: "price" });
+      ctx.plotLine("AVWAP +2 SD", up2, { color: "#9a6a1f", width: 1, opacity: 0.55, pane: "price" });
+      ctx.plotLine("AVWAP -2 SD", dn2, { color: "#9a6a1f", width: 1, opacity: 0.55, pane: "price" });
     }
 
     // anchor marker at the anchor candle

@@ -74,6 +74,7 @@ export interface IndicatorMeta {
   inputs: Record<string, number | string | boolean>;
   overlay: boolean;
   error?: string;
+  kind?: string;
 }
 
 // Read an indicator's DISPLAY metadata (name + overlay flag) by STATIC inspection —
@@ -96,6 +97,12 @@ export function parseIndicatorMeta(script: string): IndicatorMeta {
   if (nameMatch && nameMatch[2].trim()) meta.name = nameMatch[2].trim().slice(0, 64);
   // overlay defaults to true; only an explicit `overlay: false` turns it off
   if (/\boverlay\s*:\s*false\b/.test(script)) meta.overlay = false;
+  // Mark the Anchored-VWAP tool so the panel offers click-to-anchor UI. Require BOTH
+  // an `anchorTime` token AND the quoted "Anchored VWAP" label so an unrelated custom
+  // indicator that merely mentions `anchorTime` (e.g. in a comment) isn't misclassified.
+  if (/\banchorTime\b/.test(script) && /["']Anchored VWAP["']/.test(script)) {
+    meta.kind = "anchored-vwap";
+  }
   if (!/\bindicator\s*\(/.test(script)) {
     meta.error = "Script did not call indicator(name, definition)";
   }

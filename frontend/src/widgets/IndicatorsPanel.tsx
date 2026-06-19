@@ -19,6 +19,9 @@ export default function IndicatorsPanel({ open, onClose }: { open: boolean; onCl
   const toggleIndicator = useStore((s) => s.toggleIndicator);
   const updateIndicator = useStore((s) => s.updateIndicator);
   const setMode = useStore((s) => s.setIndicatorExecutionMode);
+  const symbol = useStore((s) => s.symbol);
+  const beginAnchorPick = useStore((s) => s.beginIndicatorAnchorPick);
+  const setIndicatorAnchor = useStore((s) => s.setIndicatorAnchor);
 
   const [draft, setDraft] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -87,6 +90,16 @@ export default function IndicatorsPanel({ open, onClose }: { open: boolean; onCl
           )}
           {indicators.map((ind) => {
             const err = errors[ind.id] ?? ind.lastError ?? null;
+            const isAvwap = ind.kind === "anchored-vwap" || ind.name === "Anchored VWAP";
+            const anchorTime = Number(ind.inputs.anchorTime ?? 0);
+            const anchorSym = String(ind.inputs.anchorSymbol ?? "");
+            const anchorStatus = !isAvwap
+              ? null
+              : !(anchorTime > 0)
+                ? { ok: false, text: "No anchor — click Pick Anchor, then click a candle" }
+                : anchorSym && anchorSym !== symbol
+                  ? { ok: false, text: `Anchor on ${anchorSym} — pick again for ${symbol}` }
+                  : { ok: true, text: `Anchored: ${new Date(anchorTime).toLocaleString()}` };
             return (
               <div key={ind.id} className="rounded border border-terminal-border bg-terminal-bg/40 p-2">
                 <div className="flex items-center justify-between gap-2">
@@ -101,6 +114,28 @@ export default function IndicatorsPanel({ open, onClose }: { open: boolean; onCl
                     <span className="text-[9px] text-terminal-muted">{ind.overlay ? "overlay" : "pane"}</span>
                   </label>
                   <div className="flex items-center gap-2">
+                    {isAvwap && (
+                      <>
+                        <button
+                          onClick={() => {
+                            beginAnchorPick(ind.id);
+                            onClose();
+                          }}
+                          title="Pick an anchor: closes this panel, then click a candle on the chart"
+                          className="rounded border border-flow-exhaustion/50 px-1.5 py-0.5 text-[10px] font-semibold text-flow-exhaustion hover:bg-terminal-border"
+                        >
+                          Pick Anchor
+                        </button>
+                        {anchorTime > 0 && (
+                          <button
+                            onClick={() => setIndicatorAnchor(ind.id, 0, "")}
+                            className="text-[11px] text-terminal-muted hover:text-terminal-text"
+                          >
+                            clear
+                          </button>
+                        )}
+                      </>
+                    )}
                     <button
                       onClick={() => (editingId === ind.id ? setEditingId(null) : startEdit(ind.id, ind.script))}
                       className="text-[11px] text-terminal-muted hover:text-terminal-text"
@@ -115,6 +150,13 @@ export default function IndicatorsPanel({ open, onClose }: { open: boolean; onCl
                     </button>
                   </div>
                 </div>
+                {anchorStatus && (
+                  <div
+                    className={`mt-1 text-[10px] ${anchorStatus.ok ? "text-terminal-muted" : "text-flow-exhaustion"}`}
+                  >
+                    {anchorStatus.text}
+                  </div>
+                )}
                 {err && (
                   <div className="mt-1 break-words rounded bg-flow-sellHi/10 px-1.5 py-0.5 text-[10px] text-flow-sellHi">
                     {err}
