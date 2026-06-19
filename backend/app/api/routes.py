@@ -65,13 +65,15 @@ async def symbol_config_one(symbol: str) -> dict:
 
 @router.get("/footprints")
 async def footprints(req: Request, symbol: str, timeframe: str | None = None,
-                     limit: int | None = None, rowSize: float | None = None) -> dict:
+                     limit: int | None = None, rowSize: float | None = None,
+                     cells: bool = True) -> dict:
     tf = timeframe or settings.default_timeframe
     # default to the configured snapshot size; hard-clamp so no client can request an
     # unbounded payload (footprint candles are heavy).
     lim = settings.default_snapshot_limit if limit is None else limit
     lim = max(1, min(lim, settings.max_snapshot_limit))
-    candles = await _pipeline(req).snapshot(symbol.upper(), tf, lim, rowSize)
+    # cells=false -> candle-only payload (no per-price footprint cells) for fast candle-mode loads
+    candles = await _pipeline(req).snapshot(symbol.upper(), tf, lim, rowSize, cells=cells)
     return {"symbol": symbol.upper(), "timeframe": tf, "candles": candles}
 
 

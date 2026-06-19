@@ -269,12 +269,16 @@ class Pipeline:
         return st
 
     async def snapshot(self, symbol: str, timeframe: str, limit: int = 200,
-                       row_size: Optional[float] = None) -> list[dict]:
+                       row_size: Optional[float] = None, cells: bool = True) -> list[dict]:
         """Historical candles for initial chart load.
 
         Loads database candles from Postgres, merges them with hot cache candles from
         Redis (where newer Redis candles overwrite or append to Postgres rows), and
         appends the live/open candle in memory.
+
+        cells=False returns a candle-only payload (per-price footprint cells dropped) —
+        a full-cells 15k snapshot is ~40MB, but candle mode never renders the cells, so
+        the default chart load stays small/fast. Footprint mode requests cells=True.
         """
         base = default_row_size(symbol)
         rs = row_size if row_size is not None else base
@@ -303,6 +307,11 @@ class Pipeline:
         live = self._live.get((symbol, timeframe, rs))
         if live and (not rows or rows[-1]["startTime"] != live["startTime"]):
             rows.append(live)
+
+        # candle-only payload: strip the heavy per-price cells. Copy each row (don't
+        # mutate) because the live candle dict is shared in memory with other consumers.
+        if not cells:
+            rows = [{**r, "cells": []} for r in rows]
 
         return rows
 

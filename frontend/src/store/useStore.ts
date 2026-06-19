@@ -24,7 +24,7 @@ import { runIndicators, disposeSandbox } from "../indicators/engine";
 import { parseIndicatorMeta } from "../indicators/runtime";
 import { DELTA_SPIKE_SCRIPT, ANCHORED_VWAP_SCRIPT } from "../indicators/examples";
 import type { DrawingObject, DrawingTool } from "../drawings/types";
-import { CHART_CANDLE_LIMIT } from "../lib/limits";
+import { CHART_CANDLE_LIMIT, snapshotRequestForMode } from "../lib/limits";
 
 // Geometry of a floating workspace window (persisted per window id).
 export interface WindowRect {
@@ -470,7 +470,13 @@ export const useStore = create<State>((set, get) => ({
     bumpRecomputeSeq();
     set({ consolidation: n, candles: [], indicatorOutputs: [] });
   },
-  setChartDisplayMode: (m) => set({ chartDisplayMode: m }),
+  setChartDisplayMode: (m) => {
+    if (get().chartDisplayMode === m) return;
+    set({ chartDisplayMode: m });
+    // refetch with the right payload for the new mode: candle = deep cells-free,
+    // footprint = full cells on a smaller window. (Live WS candles always carry cells.)
+    get().loadLiveSnapshot();
+  },
   toggleTheme: () => set({ theme: get().theme === "dark" ? "light" : "dark" }),
   setSettings: (patch) => set({ settings: { ...get().settings, ...patch } }),
   setBlockSizeModalOpen: (open) => set({ blockSizeModalOpen: open }),
@@ -514,15 +520,25 @@ export const useStore = create<State>((set, get) => ({
   // pull the current live footprint snapshot for the active symbol/timeframe,
   // consolidated to the active price-grouping level
   loadLiveSnapshot: () => {
-    const { symbol, timeframe, consolidation } = get();
+    const { symbol, timeframe, consolidation, chartDisplayMode } = get();
     const rowSize = consolidatedRowSize(symbol, consolidation);
+    // candle mode -> deep cells-free payload (fast); footprint mode -> full cells, smaller window
+    const { limit, cells } = snapshotRequestForMode(chartDisplayMode);
     api
-      .footprints(symbol, timeframe, rowSize, CHART_CANDLE_LIMIT)
+      .footprints(symbol, timeframe, rowSize, limit, cells)
       .then((r) => {
-        // ignore if the user moved on, a replay restarted, or consolidation changed meanwhile
+        // ignore if the user moved on, a replay restarted, consolidation OR chart mode
+        // changed meanwhile (a stale candle-mode payload must not overwrite footprint cells)
         const s = get();
         const rs = consolidatedRowSize(s.symbol, s.consolidation);
-        if (s.replayActive || s.symbol !== symbol || s.timeframe !== timeframe || rowSize !== rs) return;
+        if (
+          s.replayActive ||
+          s.symbol !== symbol ||
+          s.timeframe !== timeframe ||
+          rowSize !== rs ||
+          s.chartDisplayMode !== chartDisplayMode
+        )
+          return;
         set({ candles: r.candles.slice(-MAX_CANDLES) });
         scheduleRecompute();
       })
