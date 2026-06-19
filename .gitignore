@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.local
+
+# Data / recordings
+data/
+*.parquet
+*.db
+*.sqlite3
+tick_recordings/
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/vite.config.d.ts
+*.tsbuildinfo
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Docker volumes
+pgdata/
+redisdata/
+
+# Agent / local tooling + deploy artifacts
+.claude/
+orderflow.tgz
+*.tgz

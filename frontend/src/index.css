@@ -1,0 +1,104 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Terminal theme tokens. Stored as space-separated RGB channels so Tailwind's
+   <alpha-value> opacity modifiers (e.g. bg-terminal-panel/95) keep working.
+   :root = dark (default); html.light overrides to the light palette. */
+:root {
+  --terminal-bg: 11 14 17;        /* #0b0e11 */
+  --terminal-panel: 18 22 28;     /* #12161c */
+  --terminal-border: 31 38 48;    /* #1f2630 */
+  --terminal-text: 199 208 219;   /* #c7d0db */
+  --terminal-muted: 107 119 133;  /* #6b7785 */
+}
+html.light {
+  --terminal-bg: 248 249 250;     /* #f8f9fa */
+  --terminal-panel: 255 255 255;  /* #ffffff */
+  --terminal-border: 222 226 230; /* #dee2e6 */
+  --terminal-text: 33 37 41;      /* #212529 */
+  --terminal-muted: 108 117 125;  /* #6c757d */
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  background: rgb(var(--terminal-bg));
+  color: rgb(var(--terminal-text));
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: rgb(var(--terminal-bg));
+}
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--terminal-border));
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--terminal-muted) / 0.6);
+}
+
+@layer components {
+  .panel {
+    @apply bg-terminal-panel/95 backdrop-blur-md border border-terminal-border rounded-lg shadow-xl shadow-black/40 transition-all duration-200;
+  }
+  .panel-title {
+    @apply text-[11px] uppercase tracking-wider font-semibold text-terminal-muted px-3 py-2 border-b border-terminal-border bg-terminal-bg/40 rounded-t-lg;
+  }
+  .stat-chip {
+    @apply px-2.5 py-1 rounded-md text-xs font-semibold shadow-inner;
+  }
+  
+  /* Premium Trading Control buttons */
+  .btn-buy-mkt {
+    @apply bg-gradient-to-r from-flow-buy to-flow-buy/80 hover:from-flow-buyHi hover:to-flow-buy text-white font-semibold shadow-lg shadow-flow-buy/20 hover:shadow-flow-buyHi/30 active:scale-95 transition-all duration-150 rounded px-3 py-1.5 text-xs;
+  }
+  .btn-sell-mkt {
+    @apply bg-gradient-to-r from-flow-sell to-flow-sell/80 hover:from-flow-sellHi hover:to-flow-sell text-white font-semibold shadow-lg shadow-flow-sell/20 hover:shadow-flow-sellHi/30 active:scale-95 transition-all duration-150 rounded px-3 py-1.5 text-xs;
+  }
+  .btn-flatten {
+    @apply bg-gradient-to-r from-terminal-border to-terminal-border/80 hover:from-terminal-muted hover:to-terminal-border text-terminal-text font-semibold shadow-md active:scale-95 transition-all duration-150 rounded px-3 py-1.5 text-xs;
+  }
+  
+  /* DOM price ladder cell effects */
+  .dom-cell-bid {
+    @apply relative hover:bg-flow-buy/10 active:bg-flow-buy/20 transition-all duration-75 cursor-pointer select-none font-mono;
+  }
+  .dom-cell-ask {
+    @apply relative hover:bg-flow-sell/10 active:bg-flow-sell/20 transition-all duration-75 cursor-pointer select-none font-mono;
+  }
+  .dom-cell-price {
+    @apply hover:bg-terminal-border/60 transition-all duration-75 cursor-pointer font-semibold font-mono text-center text-terminal-text;
+  }
+}
+
+/* Custom glow animations */
+@keyframes flash-green {
+  0%, 100% { background-color: transparent; }
+  50% { background-color: rgba(22, 193, 114, 0.2); }
+}
+
+@keyframes flash-red {
+  0%, 100% { background-color: transparent; }
+  50% { background-color: rgba(239, 77, 99, 0.2); }
+}
+
+.animate-flash-green {
+  animation: flash-green 0.5s ease-out;
+}
+
+.animate-flash-red {
+  animation: flash-red 0.5s ease-out;
+}
+

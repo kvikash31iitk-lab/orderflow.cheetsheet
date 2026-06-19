@@ -1,0 +1,77 @@
+# Production compose for the SHARED Hostinger box (srv1700029 / 93.127.185.243).
+#
+# This box already runs a HOST nginx (not Docker) that owns :80/:443 and fronts
+# ~12 other sites via certbot. So we do NOT run Caddy and do NOT bind 80/443.
+# Instead the app containers publish on localhost-only high ports, and a host
+# nginx vhost (deploy/nginx/orderflow.cheetsheet.tech.conf) terminates TLS and
+# reverse-proxies orderflow.cheetsheet.tech -> these ports.
+#
+#   frontend  ->  127.0.0.1:8101  (Nginx-served React SPA)
+#   backend   ->  127.0.0.1:8102  (FastAPI: /api + /ws)
+#
+# postgres/redis stay internal to the compose network (no host ports).
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-orderflow}
+      POSTGRES_USER: ${POSTGRES_USER:-orderflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-orderflow_pw}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backend/app/storage/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-orderflow} -d ${POSTGRES_DB:-orderflow}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build: ./backend
+    restart: always
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+    volumes:
+      - tickdata:/data/ticks
+    ports:
+      - "127.0.0.1:8102:8000"   # localhost only; fronted by host nginx
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+      # Vite inlines these at BUILD time -> bundle calls the public HTTPS origin,
+      # which host nginx terminates and proxies back to the backend.
+      args:
+        VITE_API_URL: https://orderflow.cheetsheet.tech
+        VITE_WS_URL: wss://orderflow.cheetsheet.tech
+    restart: always
+    ports:
+      - "127.0.0.1:8101:80"     # localhost only; fronted by host nginx
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  redisdata:
+  tickdata:

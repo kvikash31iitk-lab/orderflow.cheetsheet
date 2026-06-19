@@ -1,0 +1,16 @@
+orderflow.cheetsheet.tech {
+    encode gzip zstd
+
+    # REST API + WebSocket -> backend (handle blocks are evaluated in order and
+    # are mutually exclusive, so /api and /ws never fall through to the SPA).
+    handle /api/* {
+        reverse_proxy backend:8000
+    }
+    handle /ws {
+        reverse_proxy backend:8000
+    }
+    # everything else -> the Nginx-served React SPA
+    handle {
+        reverse_proxy frontend:80
+    }
+}

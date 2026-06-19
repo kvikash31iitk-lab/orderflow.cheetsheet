@@ -1,0 +1,242 @@
+"""REST API: snapshots, scanner, alerts, replay control, research, metadata."""
+from __future__ import annotations
+
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
+
+from ..config import TIMEFRAME_MINUTES, Settings, settings
+from ..orderflow import research
+from ..orderflow.models import FootprintCandle
+from ..market_data.aggregator import default_row_size, get_symbol_config, SYMBOL_CONFIG
+
+router = APIRouter(prefix="/api")
+
+
+def _check_param_keys(keys) -> None:
+    """Reject override keys that aren't real Settings fields (surfaces typos as 422
+    instead of silently producing misleading backtest numbers)."""
+    unknown = [k for k in keys if k not in Settings.model_fields]
+    if unknown:
+        raise HTTPException(status_code=422, detail=f"unknown research parameters: {unknown}")
+
+
+def _pipeline(req: Request):
+    return req.app.state.pipeline
+
+
+def _replay(req: Request):
+    return req.app.state.replay
+
+
+@router.get("/health")
+async def health() -> dict:
+    return {"status": "ok", "version": "0.1.0"}
+
+
+@router.get("/status")
+async def status(req: Request) -> dict:
+    return _pipeline(req).status()
+
+
+@router.get("/symbols")
+async def symbols() -> dict:
+    return {"symbols": settings.symbols}
+
+
+@router.get("/timeframes")
+async def timeframes() -> dict:
+    return {"timeframes": list(TIMEFRAME_MINUTES.keys()), "default": settings.default_timeframe}
+
+
+@router.get("/symbol-config")
+async def symbol_config() -> dict:
+    """Per-symbol order-flow tuning table (row size, imbalance thresholds, etc.).
+
+    The frontend fetches this once and applies each symbol's imbalance ratio /
+    highlight volume to the footprint renderer."""
+    return SYMBOL_CONFIG
+
+
+@router.get("/symbol-config/{symbol}")
+async def symbol_config_one(symbol: str) -> dict:
+    """Order-flow tuning for one symbol (falls back to engine defaults if unknown)."""
+    return get_symbol_config(symbol)
+
+
+@router.get("/footprints")
+async def footprints(req: Request, symbol: str, timeframe: str | None = None,
+                     limit: int = 3000, rowSize: float | None = None) -> dict:
+    tf = timeframe or settings.default_timeframe
+    candles = await _pipeline(req).snapshot(symbol.upper(), tf, limit, rowSize)
+    return {"symbol": symbol.upper(), "timeframe": tf, "candles": candles}
+
+
+@router.get("/scanner")
+async def scanner(req: Request) -> dict:
+    return {"rows": _pipeline(req).scanner()}
+
+
+@router.get("/alerts")
+async def alerts(req: Request, limit: int = 100) -> dict:
+    return {"alerts": _pipeline(req).recent_alerts()[:limit]}
+
+
+class TimeframeBody(BaseModel):
+    timeframe: str
+
+
+@router.post("/timeframe/add")
+async def add_timeframe(req: Request, body: TimeframeBody) -> dict:
+    if body.timeframe not in TIMEFRAME_MINUTES:
+        return {"ok": False, "error": "unknown timeframe"}
+    _pipeline(req).aggregator.add_timeframe(body.timeframe)
+    return {"ok": True, "timeframes": _pipeline(req).aggregator.timeframes}
+
+
+# ----------------------------- replay -----------------------------
+class ReplayLoad(BaseModel):
+    symbol: str
+    start: int           # epoch ms
+    end: int             # epoch ms
+    timeframe: str | None = None
+
+
+class ReplayPlay(BaseModel):
+    speed: int = 1
+
+
+@router.post("/replay/load")
+async def replay_load(req: Request, body: ReplayLoad) -> dict:
+    tf = body.timeframe or settings.default_timeframe
+    n = await _replay(req).load(body.symbol, body.start, body.end, tf)
+    return {"ok": True, "ticks": n, "symbol": body.symbol.upper(), "timeframe": tf}
+
+
+@router.post("/replay/play")
+async def replay_play(req: Request, body: ReplayPlay) -> dict:
+    await _replay(req).play(body.speed)
+    return {"ok": True, "playing": True, "speed": _replay(req).speed}
+
+
+@router.post("/replay/pause")
+async def replay_pause(req: Request) -> dict:
+    await _replay(req).pause()
+    return {"ok": True, "playing": False}
+
+
+@router.post("/replay/step")
+async def replay_step(req: Request) -> dict:
+    advanced = await _replay(req).step()
+    return {"ok": True, "advanced": advanced}
+
+
+@router.post("/replay/stop")
+async def replay_stop(req: Request) -> dict:
+    await _replay(req).stop()
+    return {"ok": True}
+
+
+# ----------------------------- research -----------------------------
+async def _load_candles(req: Request, symbol: str, timeframe: str, limit: int) -> list[FootprintCandle]:
+    base = default_row_size(symbol)
+    rows = await _pipeline(req).pg.recent_footprints(symbol.upper(), timeframe, limit, row_size=base)
+    return [FootprintCandle.from_dict(r) for r in rows]
+
+
+class ResearchValidate(BaseModel):
+    symbol: str
+    timeframe: str | None = None
+    kind: str = "AD"           # AD | LP | ABSORPTION | EXHAUSTION
+    horizon: int = 5
+    limit: int = 3000
+    params: dict[str, float] = {}   # optional threshold overrides -> re-analyse first
+
+
+class ResearchSweep(BaseModel):
+    symbol: str
+    timeframe: str | None = None
+    kind: str = "AD"
+    horizon: int = 5
+    grid: dict[str, list] = {}     # Settings field name -> candidate values
+    limit: int = 3000
+
+
+@router.post("/research/validate")
+async def research_validate(req: Request, body: ResearchValidate) -> dict:
+    if body.params:
+        _check_param_keys(body.params)   # fail fast before loading candles
+    tf = body.timeframe or settings.default_timeframe
+    candles = await _load_candles(req, body.symbol, tf, body.limit)
+    # if threshold overrides are supplied, re-run the engine with them so the
+    # backtest reflects the chosen settings (this is what "Apply" relies on)
+    if body.params:
+        candles = research.replay_with_settings(candles, body.params)
+    report = research.validate(candles, body.kind.upper(), horizon=body.horizon)
+    return report.to_dict()
+
+
+@router.post("/research/sweep")
+async def research_sweep(req: Request, body: ResearchSweep) -> dict:
+    _check_param_keys(body.grid)
+    tf = body.timeframe or settings.default_timeframe
+    candles = await _load_candles(req, body.symbol, tf, body.limit)
+    reports = research.sweep(candles, body.kind.upper(), body.grid, horizon=body.horizon)
+    return {"reports": [r.to_dict() for r in reports]}
+
+
+@router.post("/research/sync")
+async def research_sync(req: Request, horizon: int = 5) -> dict:
+    updated = await _pipeline(req).pg.sync_signal_outcomes(horizon)
+    return {"updated": updated}
+
+
+# ----------------------------- simulated trading -----------------------------
+async def _broadcast_trade(pl) -> None:
+    for ev in pl.broker.drain():
+        sym = ev.get("symbol")
+        await pl.connections.broadcast(ev, symbol=sym)
+
+
+class TradeOrder(BaseModel):
+    symbol: str
+    side: str                       # buy | sell
+    type: str = "market"            # market | limit
+    qty: float
+    price: float | None = None      # required for limit
+
+
+class TradeCancel(BaseModel):
+    order_id: int
+
+
+class TradeFlatten(BaseModel):
+    symbol: str
+
+
+@router.post("/trade/order")
+async def trade_order(req: Request, body: TradeOrder) -> dict:
+    pl = _pipeline(req)
+    order = pl.broker.place_order(body.symbol.upper(), body.side, body.type, body.qty, body.price)
+    await _broadcast_trade(pl)
+    return order.to_dict()
+
+
+@router.post("/trade/cancel")
+async def trade_cancel(req: Request, body: TradeCancel) -> dict:
+    pl = _pipeline(req)
+    ok = pl.broker.cancel_order(body.order_id)
+    await _broadcast_trade(pl)
+    return {"ok": ok}
+
+
+@router.post("/trade/flatten")
+async def trade_flatten(req: Request, body: TradeFlatten) -> dict:
+    pl = _pipeline(req)
+    pl.broker.flatten(body.symbol.upper())
+    await _broadcast_trade(pl)
+    return {"ok": True}
+
+
+@router.get("/trade/state")
+async def trade_state(req: Request) -> dict:
+    return _pipeline(req).broker.state()
