@@ -75,9 +75,16 @@ function loadPersistedIndicators(): PersistedIndicators {
     const raw = localStorage.getItem(INDICATORS_LS_KEY);
     if (raw) {
       const p = JSON.parse(raw) as Partial<PersistedIndicators>;
-      const indicators = Array.isArray(p.indicators)
+      const indicators = (Array.isArray(p.indicators)
         ? p.indicators.filter((i) => i && typeof i.id === "string" && typeof i.script === "string")
-        : [];
+        : []
+      ).map((i) =>
+        // Clear a STALE "Indicator timed out" error persisted before the perf fix so the
+        // panel doesn't keep showing a timeout that no longer happens. The indicator stays
+        // in its saved enabled/disabled state; the user just sees it clean (and re-enabling
+        // recomputes it fresh). Non-timeout errors are preserved.
+        i.lastError && /timed out/i.test(i.lastError) ? { ...i, lastError: null } : i,
+      );
       const mode: IndicatorExecutionMode =
         p.mode === "direct" || p.mode === "disabled" || p.mode === "sandbox" ? p.mode : "sandbox";
       return { indicators, mode };
