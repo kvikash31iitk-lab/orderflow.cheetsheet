@@ -1,8 +1,9 @@
 import { ColorType } from "lightweight-charts";
+import { istCrosshairFormatter, istTickFormatter } from "./time";
 
-// Shared layout/grid options for the lightweight-charts panels (CumDelta,
-// DeltaHistogram) so they follow the global light/dark theme. Pass the result to
-// createChart(...) and to chart.applyOptions(...) on theme change.
+// Shared layout/grid options for the lightweight-charts panels (main chart, CumDelta,
+// DeltaHistogram) so they follow the global light/dark theme AND render times in IST.
+// Pass the result to createChart(...) and to chart.applyOptions(...) on theme change.
 export function lwcTheme(theme: "dark" | "light") {
   const dark = theme === "dark";
   const bg = dark ? "#12161c" : "#ffffff";
@@ -11,7 +12,9 @@ export function lwcTheme(theme: "dark" | "light") {
   return {
     layout: { background: { type: ColorType.Solid, color: bg }, textColor: text, fontSize: 10 },
     grid: { vertLines: { color: grid }, horzLines: { color: grid } },
-    timeScale: { timeVisible: true, secondsVisible: false, borderColor: grid },
+    // IST axis ticks + IST crosshair label (display only; data stays epoch-UTC)
+    timeScale: { timeVisible: true, secondsVisible: false, borderColor: grid, tickMarkFormatter: istTickFormatter },
     rightPriceScale: { borderColor: grid },
+    localization: { timeFormatter: istCrosshairFormatter },
   };
 }

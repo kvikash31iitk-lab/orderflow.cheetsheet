@@ -6,6 +6,7 @@ import type { FootprintMode } from "../types/orderflow";
 import ConnectionStatus from "../widgets/ConnectionStatus";
 import SettingsModal from "./SettingsModal";
 import IndicatorsPanel from "../widgets/IndicatorsPanel";
+import AvwapManager from "../widgets/AvwapManager";
 
 const DEFAULT_TFS = ["tick", "1m", "2m", "3m", "5m", "15m", "30m", "1h", "4h", "1D"];
 
@@ -55,10 +56,12 @@ export default function Header() {
   const pendingAnchorTool = useStore((s) => s.pendingAnchorTool);
   const beginAnchoredVwapPlacement = useStore((s) => s.beginAnchoredVwapPlacement);
   const cancelAnchorPick = useStore((s) => s.cancelIndicatorAnchorPick);
+  const avwapCount = useStore((s) => s.indicators.filter((i) => i.kind === "anchored-vwap").length);
   const [symbols, setSymbols] = useState<string[]>(["NIFTY-I", "BANKNIFTY-I", "FINNIFTY-I", "MIDCPNIFTY-I"]);
   const [tfs, setTfs] = useState<string[]>(DEFAULT_TFS);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [indicatorsOpen, setIndicatorsOpen] = useState(false);
+  const [avwapMgrOpen, setAvwapMgrOpen] = useState(false);
 
   useEffect(() => {
     api.symbols().then((r) => r.symbols?.length && setSymbols(r.symbols)).catch(() => {});
@@ -208,19 +211,33 @@ export default function Header() {
         ƒx
       </button>
 
-      <button
-        onClick={() =>
-          pendingAnchorTool === "anchored-vwap" ? cancelAnchorPick() : beginAnchoredVwapPlacement()
-        }
-        title="Anchored VWAP — click, then click a candle to drop a new anchored VWAP"
-        className={`rounded border px-2 py-1 text-xs font-semibold ${
-          pendingAnchorTool === "anchored-vwap"
-            ? "border-flow-exhaustion bg-flow-exhaustion/20 text-flow-exhaustion"
-            : "border-terminal-border bg-terminal-bg text-terminal-text hover:bg-terminal-border"
-        }`}
-      >
-        AVWAP
-      </button>
+      <div className="relative flex items-center">
+        <button
+          onClick={() =>
+            pendingAnchorTool === "anchored-vwap" ? cancelAnchorPick() : beginAnchoredVwapPlacement()
+          }
+          title="Anchored VWAP — click, then click a candle to drop a new anchored VWAP"
+          className={`rounded-l border px-2 py-1 text-xs font-semibold ${
+            pendingAnchorTool === "anchored-vwap"
+              ? "border-flow-exhaustion bg-flow-exhaustion/20 text-flow-exhaustion"
+              : "border-terminal-border bg-terminal-bg text-terminal-text hover:bg-terminal-border"
+          }`}
+        >
+          AVWAP
+        </button>
+        <button
+          onClick={() => setAvwapMgrOpen((v) => !v)}
+          title="Manage Anchored VWAPs (hide / delete / clear all)"
+          className={`flex items-center gap-0.5 rounded-r border border-l-0 px-1.5 py-1 text-[10px] ${
+            avwapMgrOpen
+              ? "border-flow-exhaustion bg-flow-exhaustion/20 text-flow-exhaustion"
+              : "border-terminal-border bg-terminal-bg text-terminal-muted hover:bg-terminal-border hover:text-terminal-text"
+          }`}
+        >
+          {avwapCount > 0 && <span className="font-semibold text-flow-exhaustion">{avwapCount}</span>}▾
+        </button>
+        <AvwapManager open={avwapMgrOpen} onClose={() => setAvwapMgrOpen(false)} />
+      </div>
 
       <div className="ml-2 flex items-center gap-5">
         <Stat label="Price" value={last ? last.close.toFixed(2) : "—"} />

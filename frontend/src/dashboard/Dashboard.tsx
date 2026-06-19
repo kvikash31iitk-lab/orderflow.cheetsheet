@@ -1,5 +1,5 @@
 import { useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
-import { useStore } from "../store/useStore";
+import { useStore, LAYOUT_BOUNDS } from "../store/useStore";
 import FootprintChart from "../charts/FootprintChart";
 import BlockSizeModal from "./BlockSizeModal";
 import Header from "./Header";
@@ -12,6 +12,7 @@ import ResearchPanel from "../widgets/ResearchPanel";
 import Scanner from "../widgets/Scanner";
 import DrawingToolbar from "./DrawingToolbar";
 import ObjectTreePanel from "../widgets/ObjectTreePanel";
+import Splitter from "../components/Splitter";
 
 type View = "terminal" | "research";
 
@@ -73,6 +74,9 @@ export default function Dashboard() {
   const [showScanner, setShowScanner] = useState(true);
   const [objectsOpen, setObjectsOpen] = useState(false);
   const setBlockSizeModalOpen = useStore((s) => s.setBlockSizeModalOpen);
+  const layout = useStore((s) => s.layout);
+  const setLayout = useStore((s) => s.setLayout);
+  const resetLayout = useStore((s) => s.resetLayout);
 
   // global ";" shortcut -> open the block-size modal, unless an editable field is focused
   useEffect(() => {
@@ -90,16 +94,17 @@ export default function Dashboard() {
     return () => window.removeEventListener("keydown", onKey);
   }, [setBlockSizeModalOpen]);
 
-  // left column rows: collapse hidden sub-panels; footprint always takes 1fr.
-  // both delta panels hidden -> the chart takes 100% height.
-  const leftRows =
-    showHist && showCum ? "1fr 180px 160px" : showHist ? "1fr 180px" : showCum ? "1fr 160px" : "1fr";
+  // left column rows: chart always 1fr, then a splitter + the resizable panel for each
+  // visible delta pane (sizes come from the persisted layout).
+  const leftRows = ["1fr"];
+  if (showHist) leftRows.push("5px", `${layout.histHeight}px`);
+  if (showCum) leftRows.push("5px", `${layout.cumDeltaHeight}px`);
 
-  // main columns: 1fr left + optional DOM + optional right column.
-  // scanner & DOM both hidden -> the left column spans the full width.
-  const cols = ["1fr"];
-  if (showDom) cols.push("280px");
-  if (showScanner) cols.push("320px");
+  // main columns: chart area (minmax so it can shrink) + optional DOM + optional
+  // splitter + right column. Scanner & DOM both hidden -> left spans full width.
+  const cols = ["minmax(0,1fr)"];
+  if (showDom) cols.push(`${layout.domColumnWidth}px`);
+  if (showScanner) cols.push("5px", `${layout.rightColumnWidth}px`);
 
   return (
     <div className="flex h-full flex-col bg-terminal-bg">
@@ -116,8 +121,8 @@ export default function Dashboard() {
         <div className="flex min-h-0 flex-1">
           <DrawingToolbar onOpenObjects={() => setObjectsOpen(true)} />
           <div className="grid min-h-0 flex-1 gap-1 p-1" style={{ gridTemplateColumns: cols.join(" ") }}>
-          {/* left column: footprint + delta panels */}
-          <div className="grid min-h-0 min-w-0 gap-1" style={{ gridTemplateRows: leftRows }}>
+          {/* left column: footprint + delta panels (each delta pane is drag-resizable) */}
+          <div className="grid min-h-0 min-w-0 gap-1" style={{ gridTemplateRows: leftRows.join(" ") }}>
             <Panel
               title="Footprint Chart"
               extra={
@@ -135,9 +140,31 @@ export default function Dashboard() {
               <FootprintChart />
             </Panel>
             {showHist && (
+              <Splitter
+                axis="y"
+                invert
+                value={layout.histHeight}
+                min={LAYOUT_BOUNDS.histHeight[0]}
+                max={LAYOUT_BOUNDS.histHeight[1]}
+                onChange={(v) => setLayout({ histHeight: v })}
+                onReset={() => resetLayout("histHeight")}
+              />
+            )}
+            {showHist && (
               <Panel title="Delta Histogram">
                 <DeltaHistogram />
               </Panel>
+            )}
+            {showCum && (
+              <Splitter
+                axis="y"
+                invert
+                value={layout.cumDeltaHeight}
+                min={LAYOUT_BOUNDS.cumDeltaHeight[0]}
+                max={LAYOUT_BOUNDS.cumDeltaHeight[1]}
+                onChange={(v) => setLayout({ cumDeltaHeight: v })}
+                onReset={() => resetLayout("cumDeltaHeight")}
+              />
             )}
             {showCum && (
               <Panel title="Cumulative Delta">
@@ -151,6 +178,19 @@ export default function Dashboard() {
             <Panel title="DOM Ladder">
               <DomLadder />
             </Panel>
+          )}
+
+          {/* vertical splitter -> right column width */}
+          {showScanner && (
+            <Splitter
+              axis="x"
+              invert
+              value={layout.rightColumnWidth}
+              min={LAYOUT_BOUNDS.rightColumnWidth[0]}
+              max={LAYOUT_BOUNDS.rightColumnWidth[1]}
+              onChange={(v) => setLayout({ rightColumnWidth: v })}
+              onReset={() => resetLayout("rightColumnWidth")}
+            />
           )}
 
           {/* right column: scanner + alerts (collapsible) */}

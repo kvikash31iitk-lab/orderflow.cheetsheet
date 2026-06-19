@@ -24,6 +24,7 @@ import { runIndicators, disposeSandbox } from "../indicators/engine";
 import { parseIndicatorMeta } from "../indicators/runtime";
 import { DELTA_SPIKE_SCRIPT, ANCHORED_VWAP_SCRIPT } from "../indicators/examples";
 import type { DrawingObject, DrawingTool } from "../drawings/types";
+import { CHART_CANDLE_LIMIT } from "../lib/limits";
 
 // Geometry of a floating workspace window (persisted per window id).
 export interface WindowRect {
@@ -31,6 +32,30 @@ export interface WindowRect {
   y: number;
   w: number;
   h: number;
+}
+
+// Persisted, user-resizable dashboard panel sizes (px).
+export interface DashboardLayout {
+  rightColumnWidth: number; // scanner / alerts column
+  domColumnWidth: number; // DOM ladder column
+  cumDeltaHeight: number; // Cumulative Delta panel
+  histHeight: number; // Delta Histogram panel
+}
+export const DEFAULT_LAYOUT: DashboardLayout = {
+  rightColumnWidth: 320,
+  domColumnWidth: 280,
+  cumDeltaHeight: 200,
+  histHeight: 180,
+};
+export const LAYOUT_BOUNDS: Record<keyof DashboardLayout, [number, number]> = {
+  rightColumnWidth: [280, 640],
+  domColumnWidth: [240, 500],
+  cumDeltaHeight: [120, 420],
+  histHeight: [120, 380],
+};
+function clampLayoutValue(key: keyof DashboardLayout, v: number): number {
+  const [min, max] = LAYOUT_BOUNDS[key];
+  return Math.max(min, Math.min(max, Math.round(v)));
 }
 
 export const DEFAULT_SETTINGS: FootprintSettings = {
@@ -49,7 +74,8 @@ export const DEFAULT_SETTINGS: FootprintSettings = {
   lockBlockSize: false,
 };
 
-const MAX_CANDLES = 3000;
+// chart history budget (default 15k; indicators run on a smaller window — see limits.ts)
+const MAX_CANDLES = CHART_CANDLE_LIMIT;
 const MAX_ALERTS = 100;
 const MAX_FILLS = 500;
 
@@ -231,6 +257,32 @@ function persistWindows(windows: Record<string, WindowRect>): void {
   }
 }
 
+const LAYOUT_LS_KEY = "vikings.layout.v1";
+function loadPersistedLayout(): DashboardLayout {
+  try {
+    const raw = localStorage.getItem(LAYOUT_LS_KEY);
+    if (raw) {
+      const p = JSON.parse(raw) as Partial<DashboardLayout>;
+      const out = { ...DEFAULT_LAYOUT };
+      (Object.keys(DEFAULT_LAYOUT) as (keyof DashboardLayout)[]).forEach((k) => {
+        const v = p[k];
+        if (typeof v === "number" && Number.isFinite(v)) out[k] = clampLayoutValue(k, v);
+      });
+      return out;
+    }
+  } catch {
+    /* fall through to defaults */
+  }
+  return { ...DEFAULT_LAYOUT };
+}
+function persistLayout(layout: DashboardLayout): void {
+  try {
+    localStorage.setItem(LAYOUT_LS_KEY, JSON.stringify(layout));
+  } catch {
+    /* ignore quota / unavailable storage */
+  }
+}
+
 // debounced + race-guarded recompute (declared before the store; called at runtime
 // after `useStore` exists, so the forward reference is safe)
 let recomputeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -289,6 +341,9 @@ interface State {
   selectedDrawingId: string | null;
   windows: Record<string, WindowRect>;
 
+  // resizable dashboard panel sizes (persisted)
+  layout: DashboardLayout;
+
   setSource: (src: "truedata" | "databento") => void;
   setSymbol: (s: string) => void;
   setTimeframe: (tf: string) => void;
@@ -303,6 +358,8 @@ interface State {
   ingest: (msg: ServerMessage) => void;
   loadSnapshot: (symbol: string, timeframe: string, candles: FootprintCandle[]) => void;
   loadLiveSnapshot: () => void;
+  // switch (symbol, timeframe) together for a scanner-row click (no-op if unchanged)
+  selectChartContext: (symbol: string, timeframe: string) => void;
   loadSymbolConfigs: () => Promise<void>;
   // indicator actions
   addIndicator: (script: string) => void;
@@ -317,6 +374,7 @@ interface State {
   setIndicatorAnchor: (indicatorId: string, anchorTime: number, anchorSymbol?: string) => void;
   beginAnchoredVwapPlacement: () => void;
   addAnchoredVwapAt: (anchorTime: number, anchorSymbol?: string) => void;
+  removeAllAnchoredVwaps: () => void;
   // drawing-object actions
   setActiveTool: (tool: DrawingTool) => void;
   addDrawing: (d: DrawingObject) => void;
@@ -328,6 +386,9 @@ interface State {
   clearDrawings: (symbol?: string) => void;
   // floating-window geometry persistence
   setWindowRect: (id: string, rect: WindowRect) => void;
+  // dashboard layout (resizable panels)
+  setLayout: (patch: Partial<DashboardLayout>) => void;
+  resetLayout: (key: keyof DashboardLayout) => void;
   reset: () => void;
 }
 
@@ -343,6 +404,7 @@ function upsert(candles: FootprintCandle[], c: FootprintCandle): FootprintCandle
 const persistedIndicators = loadPersistedIndicators();
 const persistedDrawings = loadPersistedDrawings();
 const persistedWindows = loadPersistedWindows();
+const persistedLayout = loadPersistedLayout();
 
 export const useStore = create<State>((set, get) => ({
   // dashboard defaults (no persistence for these yet -> these are the fresh-open values)
@@ -379,6 +441,7 @@ export const useStore = create<State>((set, get) => ({
   activeTool: "select",
   selectedDrawingId: null,
   windows: persistedWindows,
+  layout: persistedLayout,
 
   setSource: (src) => {
     // Use the CANONICAL upper-case symbol: the backend emits live candles as
@@ -412,6 +475,22 @@ export const useStore = create<State>((set, get) => ({
   setSettings: (patch) => set({ settings: { ...get().settings, ...patch } }),
   setBlockSizeModalOpen: (open) => set({ blockSizeModalOpen: open }),
 
+  // resizable dashboard layout: clamp each provided dimension + persist
+  setLayout: (patch) => {
+    const next = { ...get().layout };
+    (Object.keys(patch) as (keyof DashboardLayout)[]).forEach((k) => {
+      const v = patch[k];
+      if (typeof v === "number" && Number.isFinite(v)) next[k] = clampLayoutValue(k, v);
+    });
+    set({ layout: next });
+    persistLayout(next);
+  },
+  resetLayout: (key) => {
+    const next = { ...get().layout, [key]: DEFAULT_LAYOUT[key] };
+    set({ layout: next });
+    persistLayout(next);
+  },
+
   loadSnapshot: (symbol, timeframe, candles) => {
     const s = get();
     // ignore a stale LIVE snapshot (e.g. from a resubscribe) that lands after a
@@ -438,7 +517,7 @@ export const useStore = create<State>((set, get) => ({
     const { symbol, timeframe, consolidation } = get();
     const rowSize = consolidatedRowSize(symbol, consolidation);
     api
-      .footprints(symbol, timeframe, rowSize)
+      .footprints(symbol, timeframe, rowSize, CHART_CANDLE_LIMIT)
       .then((r) => {
         // ignore if the user moved on, a replay restarted, or consolidation changed meanwhile
         const s = get();
@@ -448,6 +527,20 @@ export const useStore = create<State>((set, get) => ({
         scheduleRecompute();
       })
       .catch(() => {});
+  },
+
+  // Switch the chart's (symbol, timeframe) together — used by Scanner row clicks.
+  // No-op when nothing actually changes, so clicking the already-active row never
+  // blanks the chart (the old setSymbol cleared candles even when the symbol was
+  // unchanged, and the Header [symbol,timeframe] subscribe effect wouldn't re-fire to
+  // refill them). When the context DOES change, clear stale candles/overlays, pull a
+  // fresh REST snapshot immediately, and let the Header effect re-subscribe the WS.
+  selectChartContext: (symbol, timeframe) => {
+    const cur = get();
+    if (cur.symbol === symbol && cur.timeframe === timeframe) return;
+    bumpRecomputeSeq();
+    set({ symbol, timeframe, candles: [], indicatorOutputs: [] });
+    get().loadLiveSnapshot();
   },
 
   // fetch the per-symbol order-flow tuning table once (keys are UPPER-cased to
@@ -698,6 +791,22 @@ export const useStore = create<State>((set, get) => ({
     };
     const indicators = [...cur.indicators, ind];
     set({ indicators, pendingAnchorTool: null });
+    persistIndicators(indicators, cur.indicatorExecutionMode);
+    scheduleRecompute(50);
+  },
+  // delete every Anchored VWAP instance in one shot (single recompute)
+  removeAllAnchoredVwaps: () => {
+    const cur = get();
+    const removed = new Set(cur.indicators.filter((i) => i.kind === "anchored-vwap").map((i) => i.id));
+    if (removed.size === 0) return;
+    const indicators = cur.indicators.filter((i) => i.kind !== "anchored-vwap");
+    const errs = { ...cur.indicatorErrors };
+    removed.forEach((id) => delete errs[id]);
+    set({
+      indicators,
+      indicatorErrors: errs,
+      pendingAnchorIndicatorId: removed.has(cur.pendingAnchorIndicatorId ?? "") ? null : cur.pendingAnchorIndicatorId,
+    });
     persistIndicators(indicators, cur.indicatorExecutionMode);
     scheduleRecompute(50);
   },

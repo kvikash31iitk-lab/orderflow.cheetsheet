@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useStore } from "../store/useStore";
+import { formatIstTime } from "../lib/time";
 
 const SEV: Record<string, string> = {
   high: "border-l-flow-sellHi text-flow-sellHi",
@@ -66,7 +67,7 @@ export default function AlertsPanel() {
             </span>
           </div>
           <div className="text-[11px] text-terminal-text">{a.message}</div>
-          <div className="text-[9px] text-terminal-muted">{new Date(a.ts).toLocaleTimeString()}</div>
+          <div className="text-[9px] text-terminal-muted">{formatIstTime(a.ts, true)} IST</div>
         </div>
       ))}
     </div>

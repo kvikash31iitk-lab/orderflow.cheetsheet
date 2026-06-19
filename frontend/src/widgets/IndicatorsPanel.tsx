@@ -3,6 +3,7 @@ import { useStore } from "../store/useStore";
 import { EXAMPLES } from "../indicators/examples";
 import type { IndicatorExecutionMode } from "../indicators/types";
 import FloatingWindow from "../components/FloatingWindow";
+import { formatIstDateTime } from "../lib/time";
 
 const MODES: { value: IndicatorExecutionMode; label: string; hint: string }[] = [
   { value: "sandbox", label: "Sandbox", hint: "Web Worker, isolated + timed out" },
@@ -93,7 +94,7 @@ export default function IndicatorsPanel({ open, onClose }: { open: boolean; onCl
                 ? { ok: false, text: "No anchor — click Pick Anchor, then click a candle" }
                 : anchorSym && anchorSym !== symbol
                   ? { ok: false, text: `Anchor on ${anchorSym} — pick again for ${symbol}` }
-                  : { ok: true, text: `Anchored: ${new Date(anchorTime).toLocaleString()}` };
+                  : { ok: true, text: `Anchored: ${formatIstDateTime(anchorTime)} IST` };
             return (
               <div key={ind.id} className="rounded border border-terminal-border bg-terminal-bg/40 p-2">
                 <div className="flex items-center justify-between gap-2">

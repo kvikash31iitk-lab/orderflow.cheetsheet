@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { useStore } from "../store/useStore";
 import FloatingWindow from "../components/FloatingWindow";
 import { toolDef } from "../drawings/types";
+import { formatIstDateTime } from "../lib/time";
 
 function Section({ title, extra, children }: { title: string; extra?: ReactNode; children: ReactNode }) {
   return (
@@ -122,22 +123,30 @@ export default function ObjectTreePanel({ open, onClose }: { open: boolean; onCl
 
         <Section title="Indicators">
           {indicators.length === 0 && <Empty>No indicators.</Empty>}
-          {indicators.map((i) => (
-            <div key={i.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-terminal-border/50">
-              <input
-                type="checkbox"
-                checked={i.enabled}
-                onChange={() => toggleIndicator(i.id)}
-                className="accent-flow-delta"
-                title={i.enabled ? "Disable" : "Enable"}
-              />
-              <span className="flex-1 truncate">{i.name}</span>
-              <span className="text-[9px] text-terminal-muted">{i.overlay ? "overlay" : "pane"}</span>
-              <IconBtn title="Remove" onClick={() => removeIndicator(i.id)} danger>
-                ×
-              </IconBtn>
-            </div>
-          ))}
+          {indicators.map((i) => {
+            const anchorMs = i.kind === "anchored-vwap" ? Number(i.inputs.anchorTime ?? 0) : 0;
+            return (
+              <div key={i.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-terminal-border/50">
+                <input
+                  type="checkbox"
+                  checked={i.enabled}
+                  onChange={() => toggleIndicator(i.id)}
+                  className="accent-flow-delta"
+                  title={i.enabled ? "Disable" : "Enable"}
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate">{i.name}</div>
+                  {anchorMs > 0 && (
+                    <div className="truncate text-[9px] text-terminal-muted">⚓ {formatIstDateTime(anchorMs)} IST</div>
+                  )}
+                </div>
+                <span className="text-[9px] text-terminal-muted">{i.overlay ? "overlay" : "pane"}</span>
+                <IconBtn title="Remove" onClick={() => removeIndicator(i.id)} danger>
+                  ×
+                </IconBtn>
+              </div>
+            );
+          })}
         </Section>
       </div>
     </FloatingWindow>

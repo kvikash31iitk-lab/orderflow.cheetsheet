@@ -1,5 +1,6 @@
 import type { ServerMessage } from "../types/orderflow";
 import { consolidatedRowSize } from "../lib/rowsize";
+import { CHART_CANDLE_LIMIT } from "../lib/limits";
 import { useStore } from "../store/useStore";
 
 const WS_URL = import.meta.env.VITE_WS_URL || `ws://${location.hostname}:8000`;
@@ -59,7 +60,7 @@ class WSClient {
     const { symbol, timeframe, consolidation } = useStore.getState();
     this.send({
       action: "subscribe", symbol, timeframe, replay: this.replayMode,
-      rowSize: consolidatedRowSize(symbol, consolidation),
+      rowSize: consolidatedRowSize(symbol, consolidation), limit: CHART_CANDLE_LIMIT,
     });
   }
 
@@ -67,7 +68,7 @@ class WSClient {
     const { consolidation } = useStore.getState();
     this.send({
       action: "subscribe", symbol, timeframe, replay: this.replayMode,
-      rowSize: consolidatedRowSize(symbol, consolidation),
+      rowSize: consolidatedRowSize(symbol, consolidation), limit: CHART_CANDLE_LIMIT,
     });
   }
 

@@ -17,7 +17,7 @@ const DATABENTO_SYMBOLS = ["6E.V.0", "GC.V.0", "6E.v.0", "GC.v.0"];
 export default function Scanner() {
   const rows = useStore((s) => s.scanner);
   const source = useStore((s) => s.source);
-  const setSymbol = useStore((s) => s.setSymbol);
+  const selectChartContext = useStore((s) => s.selectChartContext);
 
   const filteredRows = rows.filter((r) => {
     const isDb = DATABENTO_SYMBOLS.includes(r.symbol.toUpperCase());
@@ -47,7 +47,7 @@ export default function Scanner() {
           {filteredRows.map((r) => (
             <tr
               key={`${r.symbol}_${r.timeframe}`}
-              onClick={() => setSymbol(r.symbol)}
+              onClick={() => selectChartContext(r.symbol, r.timeframe)}
               className="cursor-pointer border-t border-terminal-border hover:bg-terminal-border/40"
             >
               <td className="px-2 py-1 font-semibold">

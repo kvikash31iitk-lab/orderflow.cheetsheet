@@ -62,6 +62,15 @@ class Settings(BaseSettings):
     redis_port: int = 6379
     redis_db: int = 0
 
+    # --- Candle snapshot limits ---
+    # Footprint candles carry per-price cells, so a snapshot is a heavy payload.
+    # These bound how many candles /api/footprints and a WS subscribe return; the
+    # frontend asks for default_snapshot_limit and the server hard-clamps to
+    # max_snapshot_limit so no client can request an unbounded payload.
+    default_snapshot_limit: int = 15000
+    websocket_snapshot_limit: int = 15000
+    max_snapshot_limit: int = 25000
+
     # --- Engine tuning ---
     default_timeframe: str = "2m"
     # Exchange timezone offset (minutes east of UTC) used to anchor the daily VWAP

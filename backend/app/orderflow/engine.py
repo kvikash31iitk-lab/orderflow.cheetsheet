@@ -46,6 +46,16 @@ class OrderFlowEngine:
         self._zone_snapshot: list[dict] = []
 
     # ------------------------------------------------------------------ #
+    def reset_session(self) -> None:
+        """Reset session-anchored running state at a trading-session boundary.
+
+        Cumulative delta (CVD) restarts at 0 for the new CME/NSE session. The rolling
+        detector windows (volume/delta percentiles, swing structure) are intentionally
+        NOT reset — they are "last N candles" windows that legitimately span sessions.
+        """
+        self.cum_delta = 0.0
+
+    # ------------------------------------------------------------------ #
     def analyze(self, candle: FootprintCandle, commit: bool, light: bool | None = None) -> FootprintCandle:
         """Run detectors over a candle.
 

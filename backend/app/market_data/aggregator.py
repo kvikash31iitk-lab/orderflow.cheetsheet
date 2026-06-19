@@ -9,7 +9,6 @@ is responsible for persistence + broadcasting so the hot path never blocks on IO
 from __future__ import annotations
 
 import copy
-import time
 from dataclasses import dataclass
 from typing import Optional
 
@@ -18,6 +17,7 @@ from ..orderflow import imbalance
 from ..orderflow.engine import OrderFlowEngine
 from ..orderflow.footprint import add_tick as fold_tick, price_to_row
 from ..orderflow.models import FootprintCandle, FootprintCell, Tick
+from .sessions import get_session_id
 
 # Per-symbol order-flow tuning. Single source of truth for the footprint row size
 # (price granularity) AND the imbalance / volume thresholds the FRONTEND renderer
@@ -105,8 +105,10 @@ class Aggregator:
         self.tf_minutes = TIMEFRAME_MINUTES[timeframe]
         self.engine = OrderFlowEngine(symbol, timeframe, self.cfg)
         self.current: Optional[FootprintCandle] = None
-        # daily session VWAP accumulators (reset on exchange-day change)
-        self.session_date: Optional[str] = None
+        # session VWAP accumulators (reset on trading-session change — see sessions.py)
+        self.session_date: Optional[str] = None  # holds the current session id
+        # session id of the currently-open candle (drives the cum_delta reset)
+        self._candle_session: Optional[str] = None
         self.session_price_volume_sum = 0.0
         self.session_volume_sum = 0.0
         self.session_price_squared_volume_sum = 0.0   # raw 2nd moment (retained)
@@ -142,13 +144,12 @@ class Aggregator:
         )
 
     def _update_session_vwap(self, tick: Tick) -> tuple[Optional[float], Optional[float]]:
-        """Accumulate the running daily VWAP + std-dev, resetting on the exchange day.
+        """Accumulate the running session VWAP + std-dev, resetting per trading session.
 
-        The reset anchors to the EXCHANGE trading session (config offset + session
-        open), not the host clock or UTC: the epoch is shifted to exchange-local time
-        and the session-day rolls at the configured open (e.g. 09:15 IST for NSE), so
-        ticks before the open belong to the previous session day. The date can only
-        change at a minute boundary, so the strftime is computed at most once/minute.
+        The reset anchors to the symbol's EXCHANGE trading session via
+        sessions.get_session_id (DST-aware: NSE 09:15 IST, CME rolls at 17:00 CT), not
+        the host clock or UTC. The session id can only change at a minute boundary, so
+        it is recomputed at most once per minute.
 
         Non-positive-volume ticks (bad/synthetic data) carry no VWAP information and
         are *not* accumulated, so they can never corrupt the running sums or clobber
@@ -159,25 +160,12 @@ class Aggregator:
         minute = tick.timestamp // 60_000
         if minute != self._vwap_minute:
             self._vwap_minute = minute
-            local_ts_sec = (tick.timestamp / 1000.0) + (self.cfg.exchange_timezone_offset_minutes * 60)
-            struct_time = time.gmtime(local_ts_sec)
-
-            session_start_min = 0
-            if self.cfg.exchange_session_start:
-                try:
-                    h, m = map(int, self.cfg.exchange_session_start.split(":"))
-                    session_start_min = h * 60 + m
-                except ValueError:
-                    pass
-
-            minute_of_day = struct_time.tm_hour * 60 + struct_time.tm_min
-            if minute_of_day < session_start_min:
-                # before the exchange open -> this tick belongs to the prior session day
-                struct_time = time.gmtime(local_ts_sec - 86400)
-
-            day = time.strftime("%Y%m%d", struct_time)
-            if day != self.session_date:
-                self.session_date = day
+            # the trading session a tick belongs to (DST-aware, per-symbol exchange
+            # profile; unknown symbols use the config offset). VWAP accumulators reset
+            # when it changes — see sessions.py.
+            sid = get_session_id(self.symbol, tick.timestamp, self.cfg)
+            if sid != self.session_date:
+                self.session_date = sid
                 self.session_price_volume_sum = 0.0
                 self.session_volume_sum = 0.0
                 self.session_price_squared_volume_sum = 0.0
@@ -213,6 +201,13 @@ class Aggregator:
             if self.current is not None:
                 closed = self.engine.analyze(self.current, commit=True)
             self.current = self._new_candle(tick)
+            # CVD/cum_delta resets at a trading-session boundary: a candle that opens in
+            # a NEW session restarts cumulative delta from 0. The previous candle was
+            # just closed above under its own (old) session, so its CVD is preserved.
+            new_session = get_session_id(self.symbol, self.current.start_time, self.cfg)
+            if self._candle_session is not None and new_session != self._candle_session:
+                self.engine.reset_session()
+            self._candle_session = new_session
 
         fold_tick(self.current, tick)
         if self.tf_minutes == 0:

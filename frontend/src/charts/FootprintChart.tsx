@@ -204,6 +204,15 @@ export default function FootprintChart() {
   return (
     <div className="relative h-full w-full">
       <div ref={hostRef} className="absolute inset-0" />
+      {candles.length === 0 && (
+        // loading / empty overlay so a large snapshot (deep history can be slow to
+        // fetch) shows progress instead of a blank chart
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <div className="rounded border border-terminal-border bg-terminal-panel/90 px-4 py-2 text-xs text-terminal-muted shadow-lg">
+            Loading {symbol}…
+          </div>
+        </div>
+      )}
       <DrawingSelectionToolbar />
       {activeTool !== "select" && (
         // drawing-tool armed: prompt + Esc/Cancel. pointer-events-none wrapper so the

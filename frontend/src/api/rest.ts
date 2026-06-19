@@ -38,10 +38,11 @@ export const api = {
   alerts: (limit = 100) => j<{ alerts: AlertMsg[] }>(`/api/alerts?limit=${limit}`),
   status: () => j<Record<string, unknown>>("/api/status"),
   symbolConfig: () => j<Record<string, SymbolConfig>>("/api/symbol-config"),
-  footprints: (symbol: string, timeframe: string, rowSize?: number) =>
+  footprints: (symbol: string, timeframe: string, rowSize?: number, limit?: number) =>
     j<{ symbol: string; timeframe: string; candles: FootprintCandle[] }>(
       `/api/footprints?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}` +
-        (rowSize ? `&rowSize=${rowSize}` : ""),
+        (rowSize ? `&rowSize=${rowSize}` : "") +
+        (limit ? `&limit=${limit}` : ""),
     ),
 
   // replay controls

@@ -97,7 +97,8 @@ async def ws_endpoint(ws: WebSocket) -> None:
         await mgr.send_to(cid, {"type": "status", "data": pipeline.status()})
         default_symbol = settings.symbols[0] if settings.symbols else None
         if default_symbol:
-            snap = await pipeline.snapshot(default_symbol, settings.default_timeframe, 3000)
+            snap = await pipeline.snapshot(
+                default_symbol, settings.default_timeframe, settings.websocket_snapshot_limit)
             await mgr.send_to(cid, {"type": "snapshot", "data": {
                 "symbol": default_symbol, "timeframe": settings.default_timeframe, "candles": snap,
             }})
@@ -111,12 +112,18 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 replay = bool(msg.get("replay", False))
                 raw_rs = msg.get("rowSize")
                 row_size = float(raw_rs) if raw_rs else None
+                raw_limit = msg.get("limit")
+                limit = (
+                    settings.websocket_snapshot_limit
+                    if raw_limit is None
+                    else max(1, min(int(raw_limit), settings.max_snapshot_limit))
+                )
                 mgr.set_filter(cid, symbol, timeframe, replay, row_size)
                 if symbol and timeframe and not replay:
                     # spin up an aggregator for this (symbol, timeframe, consolidation)
                     # so live candles flow, then send the (consolidated) snapshot.
                     pipeline.aggregator.ensure(symbol, timeframe, row_size)
-                    snap = await pipeline.snapshot(symbol, timeframe, 3000, row_size)
+                    snap = await pipeline.snapshot(symbol, timeframe, limit, row_size)
                     await mgr.send_to(cid, {"type": "snapshot", "data": {
                         "symbol": symbol, "timeframe": timeframe, "candles": snap,
                     }})
