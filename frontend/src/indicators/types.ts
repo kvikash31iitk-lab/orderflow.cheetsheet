@@ -7,7 +7,11 @@ import type { FootprintCandle } from "../types/orderflow";
 export const MAX_CANDLES = 3000;
 export const MAX_OUTPUTS = 5000;
 export const MAX_SCRIPT_LENGTH = 50000;
-export const DEFAULT_TIMEOUT_MS = 250;
+// Hard per-run sandbox budget. The primary fix for false timeouts is removing the
+// O(n^2) history allocation in runtime.ts (see makeCtx); this 500ms ceiling (raised
+// from 250ms) is headroom for legitimately heavier scripts and slower client hardware,
+// while still bounding runaway/infinite-loop scripts.
+export const DEFAULT_TIMEOUT_MS = 500;
 
 export type IndicatorExecutionMode = "sandbox" | "direct" | "disabled";
 

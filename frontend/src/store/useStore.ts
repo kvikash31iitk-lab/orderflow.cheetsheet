@@ -380,11 +380,20 @@ export const useStore = create<State>((set, get) => ({
   },
 
   toggleIndicator: (id) => {
-    const indicators = get().indicators.map((i) =>
-      i.id === id ? { ...i, enabled: !i.enabled, updatedAt: Date.now() } : i,
+    const cur = get();
+    const target = cur.indicators.find((i) => i.id === id);
+    const enabling = target ? !target.enabled : false;
+    const indicators = cur.indicators.map((i) =>
+      i.id === id
+        ? // re-enabling clears any stale error (e.g. a prior "Indicator timed out —
+          // disabled") so a recovered indicator starts clean
+          { ...i, enabled: !i.enabled, updatedAt: Date.now(), ...(enabling ? { lastError: null } : {}) }
+        : i,
     );
-    set({ indicators });
-    persistIndicators(indicators, get().indicatorExecutionMode);
+    const errs = { ...cur.indicatorErrors };
+    if (enabling) delete errs[id];
+    set({ indicators, indicatorErrors: errs });
+    persistIndicators(indicators, cur.indicatorExecutionMode);
     scheduleRecompute(50);
   },
 

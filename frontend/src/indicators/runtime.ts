@@ -132,14 +132,32 @@ export function executeIndicatorScript(request: IndicatorRunRequest): IndicatorR
   }
 
   function makeCtx(candle: FootprintCandle | null, index: number, inputs: Record<string, unknown>) {
-    return {
+    const ctx = {
       candle,
       index,
       candles,
-      history: candle ? candles.slice(0, index + 1) : candles,
       inputs,
       symbol: request.symbol,
       timeframe: request.timeframe,
+
+      // O(1) look-back to a previous candle (offset back from the current index),
+      // so scripts can peek backwards without slicing the whole history.
+      prev(offset: unknown = 1): FootprintCandle | null {
+        const o = Math.trunc(Number(offset));
+        const back = Number.isFinite(o) && o >= 1 ? o : 1;
+        const j = index - back;
+        return j >= 0 && j < candles.length ? candles[j] : null;
+      },
+
+      // The last `length` candles up to and including the current one (cheap tail
+      // slice) — rolling-window math without copying the full history each candle.
+      window(length: unknown): FootprintCandle[] {
+        const len = Math.trunc(Number(length));
+        if (!Number.isFinite(len) || len <= 0) return [];
+        const end = index >= 0 ? index + 1 : candles.length;
+        const start = Math.max(0, end - len);
+        return candles.slice(start, end);
+      },
 
       shape(opts: Record<string, unknown>) {
         if (!opts || typeof opts !== "object") return;
@@ -241,6 +259,20 @@ export function executeIndicatorScript(request: IndicatorRunRequest): IndicatorR
         /* no-op */
       },
     };
+
+    // `history` is kept for backward-compat but computed LAZILY via a getter.
+    // Eagerly building candles.slice(0, index+1) for EVERY candle is O(n^2) and was
+    // tripping the sandbox timeout even for scripts (e.g. Delta Spike) that never read
+    // it. With the getter, the slice only happens if a script actually accesses it.
+    Object.defineProperty(ctx, "history", {
+      enumerable: true,
+      configurable: true,
+      get(): FootprintCandle[] {
+        return candle ? candles.slice(0, index + 1) : candles;
+      },
+    });
+
+    return ctx;
   }
 
   try {
