@@ -11,6 +11,9 @@ import {
 import { useStore } from "../store/useStore";
 import { lwcTheme } from "../lib/chartTheme";
 import { registerChart, unregisterChart } from "../lib/chartSync";
+import { createDrawingController } from "../drawings/drawingController";
+import { toolDef } from "../drawings/types";
+import DrawingSelectionToolbar from "../widgets/DrawingSelectionToolbar";
 import {
   DARK_PALETTE,
   LIGHT_PALETTE,
@@ -44,6 +47,8 @@ export default function FootprintChart() {
   const pendingAnchorId = useStore((s) => s.pendingAnchorIndicatorId);
   const pendingAnchorTool = useStore((s) => s.pendingAnchorTool);
   const cancelAnchorPick = useStore((s) => s.cancelIndicatorAnchorPick);
+  const activeTool = useStore((s) => s.activeTool);
+  const setActiveTool = useStore((s) => s.setActiveTool);
   const lastSymbolRef = useRef(symbol);
 
   // init the chart + custom series once
@@ -69,6 +74,11 @@ export default function FootprintChart() {
     seriesRef.current = series;
     series.setData(toData(s.candles));
     registerChart("main", { chart, series });
+
+    // interactive drawing layer: attaches a series primitive + native pointer/keyboard
+    // handlers to the chart host (create / select / move / resize / delete). Disables
+    // chart pan while a tool is armed or a gesture is in progress; restores it after.
+    const drawingController = createDrawingController({ host: hostRef.current, chart, series });
 
     // click-to-anchor: acts only while a placement mode is active. Two modes:
     //  - pendingAnchorTool "anchored-vwap": CREATE a new AVWAP at the clicked candle.
@@ -111,6 +121,7 @@ export default function FootprintChart() {
 
     return () => {
       chart.unsubscribeClick(onChartClick);
+      drawingController.dispose();
       unregisterChart("main");
       entryLineRef.current = null;
       chart.remove();
@@ -193,6 +204,23 @@ export default function FootprintChart() {
   return (
     <div className="relative h-full w-full">
       <div ref={hostRef} className="absolute inset-0" />
+      <DrawingSelectionToolbar />
+      {activeTool !== "select" && (
+        // drawing-tool armed: prompt + Esc/Cancel. pointer-events-none wrapper so the
+        // chart still receives the drag; only the banner itself is interactive.
+        <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center">
+          <div className="pointer-events-auto flex items-center gap-2 rounded border border-flow-delta/60 bg-terminal-panel/95 px-3 py-1.5 text-xs text-terminal-text shadow-lg shadow-black/40">
+            <span className="text-flow-delta">✎</span>
+            <span>{toolDef(activeTool)?.label ?? "Drawing"} — drag on the chart · Esc to cancel</span>
+            <button
+              onClick={() => setActiveTool("select")}
+              className="rounded border border-terminal-border px-2 py-0.5 text-[11px] text-terminal-muted hover:bg-terminal-border"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
       {(pendingAnchorId || pendingAnchorTool) && (
         // pointer-events-none wrapper so chart clicks pass through; only the small
         // banner (incl. Cancel) is clickable.

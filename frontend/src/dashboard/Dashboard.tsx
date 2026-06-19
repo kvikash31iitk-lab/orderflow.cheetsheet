@@ -10,6 +10,8 @@ import DomLadder from "../widgets/DomLadder";
 import ReplayControls from "../widgets/ReplayControls";
 import ResearchPanel from "../widgets/ResearchPanel";
 import Scanner from "../widgets/Scanner";
+import DrawingToolbar from "./DrawingToolbar";
+import ObjectTreePanel from "../widgets/ObjectTreePanel";
 
 type View = "terminal" | "research";
 
@@ -69,6 +71,7 @@ export default function Dashboard() {
   const [showHist, setShowHist] = useState(false);
   const [showCum, setShowCum] = useState(true);
   const [showScanner, setShowScanner] = useState(true);
+  const [objectsOpen, setObjectsOpen] = useState(false);
   const setBlockSizeModalOpen = useStore((s) => s.setBlockSizeModalOpen);
 
   // global ";" shortcut -> open the block-size modal, unless an editable field is focused
@@ -101,6 +104,7 @@ export default function Dashboard() {
   return (
     <div className="flex h-full flex-col bg-terminal-bg">
       <BlockSizeModal />
+      <ObjectTreePanel open={objectsOpen} onClose={() => setObjectsOpen(false)} />
       <Header />
       <Tabs view={view} setView={setView} />
 
@@ -109,7 +113,9 @@ export default function Dashboard() {
           <ResearchPanel />
         </div>
       ) : (
-        <div className="grid min-h-0 flex-1 gap-1 p-1" style={{ gridTemplateColumns: cols.join(" ") }}>
+        <div className="flex min-h-0 flex-1">
+          <DrawingToolbar onOpenObjects={() => setObjectsOpen(true)} />
+          <div className="grid min-h-0 flex-1 gap-1 p-1" style={{ gridTemplateColumns: cols.join(" ") }}>
           {/* left column: footprint + delta panels */}
           <div className="grid min-h-0 min-w-0 gap-1" style={{ gridTemplateRows: leftRows }}>
             <Panel
@@ -158,6 +164,7 @@ export default function Dashboard() {
               </Panel>
             </div>
           )}
+          </div>
         </div>
       )}
     </div>

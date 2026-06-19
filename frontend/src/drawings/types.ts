@@ -1,0 +1,110 @@
+// Chart drawing object model.
+//
+// Drawings are stored in DATA coordinates (epoch-ms `time` + `price`) and scoped
+// per `symbol`, so they survive pan / zoom / symbol / timeframe switches and are
+// rendered by a single lightweight-charts series primitive (see DrawingPrimitive.ts)
+// rather than scattered one-off canvas hacks. The store owns the list + selection;
+// the primitive only paints; the controller (drawingController.ts) handles input.
+
+export type DrawingTool =
+  | "select"
+  | "trendline"
+  | "ray"
+  | "horizontal-line"
+  | "vertical-line"
+  | "rectangle"
+  | "brush"
+  | "fib-retracement"
+  | "text";
+
+// a point in chart data space
+export interface ChartPoint {
+  time: number; // epoch ms (snapped to a candle.startTime on creation)
+  price: number;
+}
+
+export type LineStyleName = "solid" | "dashed" | "dotted";
+
+export interface DrawingStyle {
+  color: string;
+  width: number;
+  lineStyle?: LineStyleName;
+  fillColor?: string;
+  fillOpacity?: number;
+  fontSize?: number;
+}
+
+export interface DrawingObject {
+  id: string;
+  type: DrawingTool; // never "select" for a committed object
+  name: string;
+  symbol: string;
+  timeframe?: string;
+  points: ChartPoint[]; // anchor points (1 or 2 depending on tool)
+  path?: ChartPoint[]; // freehand / brush samples
+  text?: string;
+  visible: boolean;
+  locked: boolean;
+  selected?: boolean;
+  createdAt: number;
+  updatedAt: number;
+  style: DrawingStyle;
+  meta?: Record<string, unknown>;
+}
+
+// Fibonacci retracement ratios (from point[0].price -> point[1].price).
+export const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1] as const;
+
+export interface DrawingToolDef {
+  tool: DrawingTool;
+  label: string;
+  title: string;
+  glyph: string;
+  // anchor points needed to create: 1 = single click, 2 = click-drag, 0 = freehand path
+  points: 0 | 1 | 2;
+}
+
+// Toolbar palette (order = display order). "select" is the idle cursor.
+export const DRAWING_TOOLS: DrawingToolDef[] = [
+  { tool: "select", label: "Cursor", title: "Select & move (Esc)", glyph: "⌖", points: 0 },
+  { tool: "trendline", label: "Trend Line", title: "Trend line — drag from start to end", glyph: "╱", points: 2 },
+  { tool: "ray", label: "Ray", title: "Ray — extends past the second point", glyph: "↗", points: 2 },
+  { tool: "horizontal-line", label: "Horizontal Line", title: "Horizontal line at a price", glyph: "━", points: 1 },
+  { tool: "vertical-line", label: "Vertical Line", title: "Vertical line at a time", glyph: "┃", points: 1 },
+  { tool: "rectangle", label: "Rectangle", title: "Rectangle / zone — drag opposite corners", glyph: "▭", points: 2 },
+  { tool: "fib-retracement", label: "Fib Retracement", title: "Fibonacci retracement — drag the range", glyph: "ƒ", points: 2 },
+  { tool: "brush", label: "Brush", title: "Freehand brush", glyph: "✎", points: 0 },
+  { tool: "text", label: "Text", title: "Text label", glyph: "T", points: 1 },
+];
+
+export function toolDef(tool: DrawingTool): DrawingToolDef | undefined {
+  return DRAWING_TOOLS.find((d) => d.tool === tool);
+}
+
+// Default style for new drawings (flow.delta accent; theme-independent on purpose so
+// a user-picked color is never silently swapped when the theme toggles).
+export const DEFAULT_DRAWING_STYLE: DrawingStyle = {
+  color: "#2f81f7",
+  width: 2,
+  lineStyle: "solid",
+  fillColor: "#2f81f7",
+  fillOpacity: 0.12,
+  fontSize: 12,
+};
+
+export function makeDrawingId(): string {
+  return `dr_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-4)}`;
+}
+
+// Distinguishable per-type display name ("Trend Line 1", "Rectangle 2", ...).
+export function drawingDisplayName(type: DrawingTool, existing: DrawingObject[]): string {
+  const def = toolDef(type);
+  const base = def ? def.label : type;
+  const n = existing.filter((d) => d.type === type).length + 1;
+  return `${base} ${n}`;
+}
+
+// Number of anchor points a tool needs before it becomes a committed object.
+export function pointsForTool(tool: DrawingTool): 0 | 1 | 2 {
+  return toolDef(tool)?.points ?? 2;
+}

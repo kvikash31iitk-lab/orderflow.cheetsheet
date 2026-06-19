@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useStore } from "../store/useStore";
 import { EXAMPLES } from "../indicators/examples";
 import type { IndicatorExecutionMode } from "../indicators/types";
+import FloatingWindow from "../components/FloatingWindow";
 
 const MODES: { value: IndicatorExecutionMode; label: string; hint: string }[] = [
   { value: "sandbox", label: "Sandbox", hint: "Web Worker, isolated + timed out" },
@@ -27,8 +28,6 @@ export default function IndicatorsPanel({ open, onClose }: { open: boolean; onCl
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editScript, setEditScript] = useState("");
 
-  if (!open) return null;
-
   const startEdit = (id: string, script: string) => {
     setEditingId(id);
     setEditScript(script);
@@ -39,38 +38,33 @@ export default function IndicatorsPanel({ open, onClose }: { open: boolean; onCl
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
-      onClick={onClose}
+    <FloatingWindow
+      id="indicators"
+      title="ƒx Indicators"
+      open={open}
+      onClose={onClose}
+      defaultRect={{ w: 640, h: 580 }}
+      minW={360}
+      minH={300}
+      bodyClassName="flex min-h-0 flex-col p-4"
+      headerExtra={
+        <>
+          {busy && <span className="text-[10px] text-flow-exhaustion">running…</span>}
+          <select
+            value={mode}
+            onChange={(e) => setMode(e.target.value as IndicatorExecutionMode)}
+            title={MODES.find((m) => m.value === mode)?.hint}
+            className="rounded border border-terminal-border bg-terminal-bg px-2 py-1 text-xs text-terminal-text"
+          >
+            {MODES.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+        </>
+      }
     >
-      <div
-        className="flex max-h-[88vh] w-[640px] max-w-[94vw] flex-col rounded-lg border border-terminal-border bg-terminal-panel p-4 shadow-2xl shadow-black/50"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <h2 className="text-sm font-bold text-terminal-text">ƒx Indicators</h2>
-            {busy && <span className="text-[10px] text-flow-exhaustion">running…</span>}
-          </div>
-          <div className="flex items-center gap-2">
-            <select
-              value={mode}
-              onChange={(e) => setMode(e.target.value as IndicatorExecutionMode)}
-              title={MODES.find((m) => m.value === mode)?.hint}
-              className="rounded border border-terminal-border bg-terminal-bg px-2 py-1 text-xs text-terminal-text"
-            >
-              {MODES.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-            <button onClick={onClose} className="text-lg leading-none text-terminal-muted hover:text-terminal-text" title="Close">
-              ×
-            </button>
-          </div>
-        </div>
-
         <div className="mb-2 flex items-center gap-2">
           <span className="text-[10px] uppercase tracking-wider text-terminal-muted">Add example:</span>
           {EXAMPLES.map((ex) => (
@@ -212,7 +206,6 @@ export default function IndicatorsPanel({ open, onClose }: { open: boolean; onCl
             </button>
           </div>
         </div>
-      </div>
-    </div>
+    </FloatingWindow>
   );
 }

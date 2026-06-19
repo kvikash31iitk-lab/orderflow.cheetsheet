@@ -23,6 +23,15 @@ import type {
 import { runIndicators, disposeSandbox } from "../indicators/engine";
 import { parseIndicatorMeta } from "../indicators/runtime";
 import { DELTA_SPIKE_SCRIPT, ANCHORED_VWAP_SCRIPT } from "../indicators/examples";
+import type { DrawingObject, DrawingTool } from "../drawings/types";
+
+// Geometry of a floating workspace window (persisted per window id).
+export interface WindowRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
 
 export const DEFAULT_SETTINGS: FootprintSettings = {
   tickMultiplier: 1,
@@ -32,7 +41,9 @@ export const DEFAULT_SETTINGS: FootprintSettings = {
   showSdBands: true,
   showPoc: true,
   showImbalances: true,
-  showBadges: true,
+  // Order-flow signal badges (LP / AD / A / E / DD) are off by default for a
+  // clean institutional chart; execution fills remain visible when present.
+  showBadges: false,
   showFills: true,
   showThinCandle: true,
   lockBlockSize: false,
@@ -148,6 +159,78 @@ function persistIndicators(indicators: IndicatorInstance[], mode: IndicatorExecu
   }
 }
 
+// ----------------------------------------------- chart drawings + floating windows
+// Same manual-persistence pattern as indicators (no zustand middleware): a load helper
+// called once into a module const before create(), and a persist helper called inside
+// every mutating action. Drawings are stored in DATA coords + per-symbol so they
+// survive pan/zoom/symbol/timeframe switches.
+const DRAWINGS_LS_KEY = "vikings.drawings.v1";
+const WINDOWS_LS_KEY = "vikings.windows.v1";
+
+function loadPersistedDrawings(): DrawingObject[] {
+  try {
+    const raw = localStorage.getItem(DRAWINGS_LS_KEY);
+    if (raw) {
+      const p = JSON.parse(raw) as { drawings?: unknown };
+      if (Array.isArray(p.drawings)) {
+        return p.drawings.filter(
+          (d): d is DrawingObject =>
+            !!d &&
+            typeof (d as DrawingObject).id === "string" &&
+            typeof (d as DrawingObject).type === "string" &&
+            typeof (d as DrawingObject).symbol === "string" &&
+            Array.isArray((d as DrawingObject).points),
+        );
+      }
+    }
+  } catch {
+    /* fall through to empty on any parse/storage error */
+  }
+  return [];
+}
+
+function persistDrawings(drawings: DrawingObject[]): void {
+  try {
+    localStorage.setItem(DRAWINGS_LS_KEY, JSON.stringify({ drawings }));
+  } catch {
+    /* ignore quota / unavailable storage */
+  }
+}
+
+function loadPersistedWindows(): Record<string, WindowRect> {
+  try {
+    const raw = localStorage.getItem(WINDOWS_LS_KEY);
+    if (raw) {
+      const p = JSON.parse(raw) as Record<string, unknown>;
+      const out: Record<string, WindowRect> = {};
+      for (const [k, v] of Object.entries(p)) {
+        const r = v as Partial<WindowRect>;
+        if (
+          r &&
+          typeof r.x === "number" &&
+          typeof r.y === "number" &&
+          typeof r.w === "number" &&
+          typeof r.h === "number"
+        ) {
+          out[k] = { x: r.x, y: r.y, w: r.w, h: r.h };
+        }
+      }
+      return out;
+    }
+  } catch {
+    /* fall through to empty */
+  }
+  return {};
+}
+
+function persistWindows(windows: Record<string, WindowRect>): void {
+  try {
+    localStorage.setItem(WINDOWS_LS_KEY, JSON.stringify(windows));
+  } catch {
+    /* ignore quota / unavailable storage */
+  }
+}
+
 // debounced + race-guarded recompute (declared before the store; called at runtime
 // after `useStore` exists, so the forward reference is safe)
 let recomputeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -200,6 +283,12 @@ interface State {
   // toolbar placement mode: drop a NEW Anchored VWAP on the next candle click (null = off)
   pendingAnchorTool: "anchored-vwap" | null;
 
+  // chart drawings (objects) + floating workspace windows
+  drawings: DrawingObject[];
+  activeTool: DrawingTool; // "select" = idle cursor; otherwise a placement tool is armed
+  selectedDrawingId: string | null;
+  windows: Record<string, WindowRect>;
+
   setSource: (src: "truedata" | "databento") => void;
   setSymbol: (s: string) => void;
   setTimeframe: (tf: string) => void;
@@ -228,6 +317,17 @@ interface State {
   setIndicatorAnchor: (indicatorId: string, anchorTime: number, anchorSymbol?: string) => void;
   beginAnchoredVwapPlacement: () => void;
   addAnchoredVwapAt: (anchorTime: number, anchorSymbol?: string) => void;
+  // drawing-object actions
+  setActiveTool: (tool: DrawingTool) => void;
+  addDrawing: (d: DrawingObject) => void;
+  updateDrawing: (id: string, patch: Partial<DrawingObject>) => void;
+  removeDrawing: (id: string) => void;
+  selectDrawing: (id: string | null) => void;
+  toggleDrawingVisible: (id: string) => void;
+  toggleDrawingLock: (id: string) => void;
+  clearDrawings: (symbol?: string) => void;
+  // floating-window geometry persistence
+  setWindowRect: (id: string, rect: WindowRect) => void;
   reset: () => void;
 }
 
@@ -241,6 +341,8 @@ function upsert(candles: FootprintCandle[], c: FootprintCandle): FootprintCandle
 }
 
 const persistedIndicators = loadPersistedIndicators();
+const persistedDrawings = loadPersistedDrawings();
+const persistedWindows = loadPersistedWindows();
 
 export const useStore = create<State>((set, get) => ({
   // dashboard defaults (no persistence for these yet -> these are the fresh-open values)
@@ -272,6 +374,11 @@ export const useStore = create<State>((set, get) => ({
   indicatorErrors: {},
   pendingAnchorIndicatorId: null,
   pendingAnchorTool: null,
+
+  drawings: persistedDrawings,
+  activeTool: "select",
+  selectedDrawingId: null,
+  windows: persistedWindows,
 
   setSource: (src) => {
     // Use the CANONICAL upper-case symbol: the backend emits live candles as
@@ -540,7 +647,12 @@ export const useStore = create<State>((set, get) => ({
   // ----- interactive Anchored VWAP anchor picking (TradingView-style) -----
   // re-anchor an EXISTING instance (panel "Pick Anchor")
   beginIndicatorAnchorPick: (indicatorId) =>
-    set({ pendingAnchorIndicatorId: indicatorId, pendingAnchorTool: null }),
+    set({
+      pendingAnchorIndicatorId: indicatorId,
+      pendingAnchorTool: null,
+      activeTool: "select",
+      selectedDrawingId: null,
+    }),
   // cancel either mode (re-anchor or new-placement)
   cancelIndicatorAnchorPick: () => set({ pendingAnchorIndicatorId: null, pendingAnchorTool: null }),
   setIndicatorAnchor: (indicatorId, anchorTime, anchorSymbol) => {
@@ -568,7 +680,12 @@ export const useStore = create<State>((set, get) => ({
 
   // toolbar tool: arm placement mode -> the next candle click CREATES a fresh AVWAP
   beginAnchoredVwapPlacement: () =>
-    set({ pendingAnchorTool: "anchored-vwap", pendingAnchorIndicatorId: null }),
+    set({
+      pendingAnchorTool: "anchored-vwap",
+      pendingAnchorIndicatorId: null,
+      activeTool: "select",
+      selectedDrawingId: null,
+    }),
   addAnchoredVwapAt: (anchorTime, anchorSymbol) => {
     const cur = get();
     const sym = anchorSymbol ?? cur.symbol;
@@ -583,6 +700,63 @@ export const useStore = create<State>((set, get) => ({
     set({ indicators, pendingAnchorTool: null });
     persistIndicators(indicators, cur.indicatorExecutionMode);
     scheduleRecompute(50);
+  },
+
+  // ----------------------------------------------------------- chart drawings
+  // (data-coord objects; no recompute — drawings don't feed indicators)
+  setActiveTool: (tool) =>
+    // Arming a drawing tool clears selection and cancels AVWAP placement; the
+    // cursor keeps the current selection. Only one chart tool owns the pointer.
+    set({
+      activeTool: tool,
+      selectedDrawingId: tool === "select" ? get().selectedDrawingId : null,
+      pendingAnchorIndicatorId: null,
+      pendingAnchorTool: null,
+    }),
+  addDrawing: (d) => {
+    const drawings = [...get().drawings, d];
+    // creating one object reverts to the cursor and selects it (TradingView-style)
+    set({ drawings, selectedDrawingId: d.id, activeTool: "select" });
+    persistDrawings(drawings);
+  },
+  updateDrawing: (id, patch) => {
+    const drawings = get().drawings.map((d) =>
+      d.id === id ? { ...d, ...patch, id: d.id, updatedAt: Date.now() } : d,
+    );
+    set({ drawings });
+    persistDrawings(drawings);
+  },
+  removeDrawing: (id) => {
+    const cur = get();
+    const drawings = cur.drawings.filter((d) => d.id !== id);
+    set({ drawings, selectedDrawingId: cur.selectedDrawingId === id ? null : cur.selectedDrawingId });
+    persistDrawings(drawings);
+  },
+  selectDrawing: (id) => set({ selectedDrawingId: id }),
+  toggleDrawingVisible: (id) => {
+    const drawings = get().drawings.map((d) =>
+      d.id === id ? { ...d, visible: !d.visible, updatedAt: Date.now() } : d,
+    );
+    set({ drawings });
+    persistDrawings(drawings);
+  },
+  toggleDrawingLock: (id) => {
+    const drawings = get().drawings.map((d) =>
+      d.id === id ? { ...d, locked: !d.locked, updatedAt: Date.now() } : d,
+    );
+    set({ drawings });
+    persistDrawings(drawings);
+  },
+  clearDrawings: (symbol) => {
+    const cur = get();
+    const drawings = symbol ? cur.drawings.filter((d) => d.symbol !== symbol) : [];
+    set({ drawings, selectedDrawingId: null });
+    persistDrawings(drawings);
+  },
+  setWindowRect: (id, rect) => {
+    const windows = { ...get().windows, [id]: rect };
+    set({ windows });
+    persistWindows(windows);
   },
 
   reset: () => set({ candles: [], alerts: [], replay: null, replayActive: false }),

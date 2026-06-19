@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useStore } from "../store/useStore";
+import FloatingWindow from "../components/FloatingWindow";
 
 export default function BlockSizeModal() {
   const open = useStore((s) => s.blockSizeModalOpen);
@@ -33,8 +34,6 @@ export default function BlockSizeModal() {
     return () => window.removeEventListener("keydown", onKey);
   }, [open, setOpen]);
 
-  if (!open) return null;
-
   const apply = (e: FormEvent) => {
     e.preventDefault();
     const num = parseInt(val, 10);
@@ -43,17 +42,16 @@ export default function BlockSizeModal() {
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-      onClick={() => setOpen(false)}
+    <FloatingWindow
+      id="block-size"
+      title="Change Orderflow Block Size"
+      open={open}
+      onClose={() => setOpen(false)}
+      defaultRect={{ w: 320, h: 200 }}
+      minW={260}
+      minH={170}
     >
-      <div
-        className="flex w-[320px] flex-col items-center rounded-lg border border-terminal-border bg-terminal-panel p-5 shadow-2xl shadow-black/80"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <span className="mb-3 select-none text-xs font-semibold uppercase tracking-wider text-terminal-muted">
-          Change Orderflow Block Size
-        </span>
+      <div className="flex flex-col items-center">
         <form onSubmit={apply} className="w-full">
           <input
             ref={inputRef}
@@ -67,11 +65,10 @@ export default function BlockSizeModal() {
           <button type="submit" className="hidden" />
         </form>
         <span className="mt-3 select-none text-[10px] text-terminal-muted">
-          Press{" "}
-          <kbd className="rounded border border-terminal-border bg-terminal-bg px-1 py-0.5">Enter</kbd> to apply ·{" "}
+          Press <kbd className="rounded border border-terminal-border bg-terminal-bg px-1 py-0.5">Enter</kbd> to apply ·{" "}
           <kbd className="rounded border border-terminal-border bg-terminal-bg px-1 py-0.5">Esc</kbd> to cancel
         </span>
       </div>
-    </div>
+    </FloatingWindow>
   );
 }
