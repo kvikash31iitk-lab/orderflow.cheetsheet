@@ -62,12 +62,12 @@ export const DEFAULT_SETTINGS: FootprintSettings = {
   tickMultiplier: 1,
   imbalanceRatio: 3.0,
   imbalanceMinVolume: 50,
-  showVwap: true,
-  showSdBands: true,
+  // VWAP line + SD bands (the orange line/bands) and signal badges are OFF by default
+  // for a clean chart; re-enable any of these in Footprint Settings. Execution fills stay on.
+  showVwap: false,
+  showSdBands: false,
   showPoc: true,
   showImbalances: true,
-  // Order-flow signal badges (LP / AD / A / E / DD) are off by default for a
-  // clean institutional chart; execution fills remain visible when present.
   showBadges: false,
   showFills: true,
   showThinCandle: true,
