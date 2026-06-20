@@ -1,3 +1,6 @@
+import { SC1_1604_SCRIPT } from "./sc1_1604";
+import { SC1_1604_V2_SCRIPT } from "./sc1_1604_v2";
+
 // Built-in example indicator scripts. These are plain text the user can read/edit in
 // the Indicators panel. They exercise both authoring styles: per-candle (onCandle +
 // shape) and whole-series (onSeries + plotLine).
@@ -14,7 +17,7 @@ export const DELTA_SPIKE_SCRIPT = `indicator("Delta Spike", {
       ctx.shape({
         time: c.startTime,
         price: c.delta > 0 ? c.low : c.high,
-        text: c.delta > 0 ? "Buy Δ" : "Sell Δ",
+        text: c.delta > 0 ? "Buy Delta" : "Sell Delta",
         color: c.delta > 0 ? "#22c55e" : "#ef4444",
         position: c.delta > 0 ? "below" : "above"
       });
@@ -144,4 +147,6 @@ export const EXAMPLES: IndicatorExample[] = [
   { name: "Delta Spike", script: DELTA_SPIKE_SCRIPT },
   { name: "CVD MA", script: CVD_MA_SCRIPT },
   { name: "Anchored VWAP", script: ANCHORED_VWAP_SCRIPT },
+  { name: "SC1 1604 Replica", script: SC1_1604_SCRIPT },
+  { name: "SC1 1604 V2", script: SC1_1604_V2_SCRIPT },
 ];

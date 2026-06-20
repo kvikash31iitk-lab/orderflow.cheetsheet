@@ -3,8 +3,8 @@
 // Candle mode: a large history (default 15k) WITHOUT per-price footprint cells — a
 // cells-free payload is a few MB instead of ~40MB, so it loads fast. Footprint mode
 // genuinely needs the cells, so it requests a smaller window (full cells). Override
-// the candle budget via VITE_CHART_CANDLE_LIMIT. Custom indicators run on a SEPARATE,
-// smaller window (indicators/types.ts MAX_CANDLES) regardless of this.
+// the candle budget via VITE_CHART_CANDLE_LIMIT. Custom indicators use their own safety cap
+// (indicators/types.ts MAX_CANDLES), currently aligned with this 15k candle-mode window.
 export const CHART_CANDLE_LIMIT: number = (() => {
   const v = Number(import.meta.env.VITE_CHART_CANDLE_LIMIT);
   return Number.isFinite(v) && v > 0 ? Math.floor(v) : 15000;

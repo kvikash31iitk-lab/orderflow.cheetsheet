@@ -6,10 +6,11 @@
 // SANDBOXING NOTE: the script body is run via `new Function`, with dangerous host
 // globals shadowed (passed as `undefined` params) so a script can't trivially reach
 // fetch/window/document/worker APIs. This is a ROBUSTNESS sandbox, not a hardened
-// security boundary — a determined script could still escape via constructor tricks
+// security boundary - a determined script could still escape via constructor tricks
 // (`[].constructor.constructor`). Real isolation comes from running in the Web Worker
 // (no DOM) plus the client-side timeout. Direct mode is "trusted" (no isolation).
 import type {
+  IndicatorDataContext,
   IndicatorOutput,
   IndicatorPane,
   IndicatorRunRequest,
@@ -77,7 +78,7 @@ export interface IndicatorMeta {
   kind?: string;
 }
 
-// Read an indicator's DISPLAY metadata (name + overlay flag) by STATIC inspection —
+// Read an indicator's DISPLAY metadata (name + overlay flag) by STATIC inspection -
 // deliberately WITHOUT executing the script. Executing it here would run on the main
 // thread with no timeout (this is called by the store on every add/edit), so a
 // top-level `while (true) {}` could freeze the whole tab even in sandbox mode. Static
@@ -85,7 +86,7 @@ export interface IndicatorMeta {
 // actually executed (and validated) later by executeIndicatorScript inside the
 // sandboxed worker during recompute, where any error/timeout surfaces per-indicator.
 // The name/overlay are only used for the panel label, so a best-effort regex suffices.
-// Default inputs are intentionally NOT parsed here — executeIndicatorScript already
+// Default inputs are intentionally NOT parsed here - executeIndicatorScript already
 // merges the definition's inputs at run time.
 export function parseIndicatorMeta(script: string): IndicatorMeta {
   const meta: IndicatorMeta = { name: "Indicator", inputs: {}, overlay: true };
@@ -125,6 +126,7 @@ export function executeIndicatorScript(request: IndicatorRunRequest): IndicatorR
   const id = instance.id;
   const outputs: IndicatorOutput[] = [];
   const lines = new Map<string, LineAccum>();
+  const dataContext: IndicatorDataContext = request.dataContext || {};
   let outId = 0;
 
   const push = (o: IndicatorOutput): void => {
@@ -139,6 +141,10 @@ export function executeIndicatorScript(request: IndicatorRunRequest): IndicatorR
   }
 
   function makeCtx(candle: FootprintCandle | null, index: number, inputs: Record<string, unknown>) {
+    const series = (bucket: Record<string, FootprintCandle[]> | undefined, timeframe: unknown): FootprintCandle[] => {
+      const tf = String(timeframe ?? request.timeframe).trim();
+      return tf && bucket && Array.isArray(bucket[tf]) ? bucket[tf] : [];
+    };
     const ctx = {
       candle,
       index,
@@ -146,6 +152,22 @@ export function executeIndicatorScript(request: IndicatorRunRequest): IndicatorR
       inputs,
       symbol: request.symbol,
       timeframe: request.timeframe,
+
+      // Pine-style, pre-fetched data access. These are synchronous inside the sandbox:
+      // the main thread has already fetched the requested series before this run.
+      requestFootprint(timeframe: unknown = request.timeframe): FootprintCandle[] {
+        return series(dataContext.footprints, timeframe);
+      },
+
+      requestSecurity(timeframe: unknown = request.timeframe): FootprintCandle[] {
+        return series(dataContext.securities, timeframe);
+      },
+
+      dataStatus(kind: unknown, timeframe: unknown = request.timeframe) {
+        const k = String(kind || "").trim();
+        const tf = String(timeframe ?? request.timeframe).trim();
+        return dataContext.status?.[`${k}:${tf}`] || { ok: false, candles: 0, error: "not requested" };
+      },
 
       // O(1) look-back to a previous candle (offset back from the current index),
       // so scripts can peek backwards without slicing the whole history.
@@ -157,7 +179,7 @@ export function executeIndicatorScript(request: IndicatorRunRequest): IndicatorR
       },
 
       // The last `length` candles up to and including the current one (cheap tail
-      // slice) — rolling-window math without copying the full history each candle.
+      // slice) - rolling-window math without copying the full history each candle.
       window(length: unknown): FootprintCandle[] {
         const len = Math.trunc(Number(length));
         if (!Number.isFinite(len) || len <= 0) return [];
@@ -261,7 +283,7 @@ export function executeIndicatorScript(request: IndicatorRunRequest): IndicatorR
         });
       },
 
-      // Stubbed for phase 1 — real alert wiring is intentionally deferred.
+      // Stubbed for phase 1 - real alert wiring is intentionally deferred.
       alert(_condition: unknown, _message: unknown) {
         /* no-op */
       },

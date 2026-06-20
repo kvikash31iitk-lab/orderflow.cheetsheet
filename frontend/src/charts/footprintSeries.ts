@@ -172,6 +172,8 @@ class FootprintSeriesRenderer implements ICustomSeriesPaneRenderer {
     const P = opts.palette;
     const bars = data.bars;
     const { from, to } = data.visibleRange;
+    const visibleFrom = Math.max(0, Math.floor(from));
+    const visibleTo = Math.min(bars.length, Math.ceil(to));
     const barSpacing = data.barSpacing;
     const S = opts.settings ?? DEFAULT_SETTINGS;
     // dynamic consolidation by zoom: k base rows per drawn row (0 -> candles)
@@ -196,14 +198,14 @@ class FootprintSeriesRenderer implements ICustomSeriesPaneRenderer {
     let xByTime: Map<number, number> | null = null;
     if (indOut && indOut.length) {
       xByTime = new Map<number, number>();
-      for (let i = 0; i < bars.length; i++) {
-        const cc = bars[i].originalData?.candle;
+      for (let i = visibleFrom; i < visibleTo; i++) {
+        const cc = bars[i]?.originalData?.candle;
         if (cc) xByTime.set(cc.startTime, bars[i].x);
       }
       this._drawIndicatorZones(ctx, indOut, xByTime, priceToY);
     }
 
-    for (let i = from; i < to; i++) {
+    for (let i = visibleFrom; i < visibleTo; i++) {
       const bar = bars[i];
       const c = bar.originalData?.candle;
       if (!c) continue;
@@ -234,7 +236,7 @@ class FootprintSeriesRenderer implements ICustomSeriesPaneRenderer {
     }
 
     // overlays last so they sit on top; each gated by its settings toggle
-    if (S.showFills) this._drawFills(ctx, bars, from, to, opts.fills, priceToY, P);
+    if (S.showFills) this._drawFills(ctx, bars, visibleFrom, visibleTo, opts.fills, priceToY, P);
     if (S.showSdBands) {
       this._polyline(ctx, s2u, P.vwapSd2, 1, 0.45, true);
       this._polyline(ctx, s2l, P.vwapSd2, 1, 0.45, true);

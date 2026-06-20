@@ -1,23 +1,20 @@
 // Custom-indicator type model. The rest of the app depends ONLY on these types
-// (IndicatorOutput[] + IndicatorRunner) — never on a specific runner/sandbox impl,
+// (IndicatorOutput[] + IndicatorRunner) - never on a specific runner/sandbox impl,
 // so the execution backend (worker / direct / future server) is swappable.
 import type { FootprintCandle } from "../types/orderflow";
 
 // ---- hard limits (shared by runners + the worker) ----
-export const MAX_CANDLES = 3000;
-export const MAX_OUTPUTS = 5000;
+export const MAX_CANDLES = 15000;
+export const MAX_OUTPUTS = 20000;
 export const MAX_SCRIPT_LENGTH = 50000;
-// Tight per-run sandbox budget for WARM runs (raised 250 -> 500 for headroom over the
-// structured-clone of the candle payload). The O(n^2) history allocation in runtime.ts
-// (see makeCtx) is the main false-timeout fix; this still bounds runaway/infinite loops.
-export const DEFAULT_TIMEOUT_MS = 500;
-// The FIRST run on a freshly-created sandbox worker also pays a one-time worker spin-up
-// + JIT cost (measured ~600ms on a fast machine over 3000 real footprint candles, more
-// on slow hardware) ON TOP of the script. Without a separate budget that cold run trips
-// the 500ms ceiling and a normal indicator (e.g. Delta Spike) gets falsely auto-disabled
-// the instant it's enabled. The first run gets this larger budget; once the worker has
-// answered once it is "warm" and reverts to DEFAULT_TIMEOUT_MS.
-export const COLD_START_TIMEOUT_MS = 2500;
+// Per-run sandbox budget for WARM runs. The indicator window now matches the deep
+// candle-mode chart history (15k), so this allows legitimate institutional scripts
+// to process full history while still bounding runaway/infinite loops.
+export const DEFAULT_TIMEOUT_MS = 1500;
+// The FIRST run on a freshly-created sandbox worker also pays worker spin-up,
+// structured-clone, and JIT costs. Give cold runs more room; warm runs revert to
+// DEFAULT_TIMEOUT_MS after the first worker response.
+export const COLD_START_TIMEOUT_MS = 5000;
 
 export type IndicatorExecutionMode = "sandbox" | "direct" | "disabled";
 
@@ -41,7 +38,20 @@ export interface IndicatorRunRequest {
   candles: FootprintCandle[];
   symbol: string;
   timeframe: string;
+  dataContext?: IndicatorDataContext;
   maxOutputs?: number;
+}
+
+export interface IndicatorDataContext {
+  footprints?: Record<string, FootprintCandle[]>;
+  securities?: Record<string, FootprintCandle[]>;
+  status?: Record<string, IndicatorDataStatus>;
+}
+
+export interface IndicatorDataStatus {
+  ok: boolean;
+  candles: number;
+  error?: string;
 }
 
 export type IndicatorPane = "price" | "delta" | "cumDelta" | "custom";

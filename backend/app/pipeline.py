@@ -138,7 +138,7 @@ class Pipeline:
     async def _on_tick(self, raw: dict) -> None:
         tick = self.handler.normalise(
             raw["symbol"], raw["timestamp"], raw["price"], raw["volume"],
-            raw.get("bid"), raw.get("ask"),
+            raw.get("bid"), raw.get("ask"), raw.get("side"),
         )
         td = tick.to_dict()
         self.recorder.add(td)
@@ -167,7 +167,7 @@ class Pipeline:
             symbol=candle.symbol, timeframe=candle.timeframe, replay=False,
             row_size=candle.row_size,
         )
-        # the base candle is the canonical record — persist / alert / scan it once.
+        # the base candle is the canonical record - persist / alert / scan it once.
         if candle.row_size == default_row_size(candle.symbol):
             await self.pg.save_candle(candle)
             await self.redis.push_candle(candle.symbol, candle.timeframe, candle.to_dict())
@@ -276,7 +276,7 @@ class Pipeline:
         Redis (where newer Redis candles overwrite or append to Postgres rows), and
         appends the live/open candle in memory.
 
-        cells=False returns a candle-only payload (per-price footprint cells dropped) —
+        cells=False returns a candle-only payload (per-price footprint cells dropped) -
         a full-cells 15k snapshot is ~40MB, but candle mode never renders the cells, so
         the default chart load stays small/fast. Footprint mode requests cells=True.
         """

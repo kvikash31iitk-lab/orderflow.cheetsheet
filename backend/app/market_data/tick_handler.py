@@ -37,6 +37,29 @@ def classify_side(
     return TradeSide.NEUTRAL
 
 
+
+def coerce_feed_side(side: object) -> Optional[TradeSide]:
+    """Convert vendor-provided aggressor side to our internal side enum.
+
+    Databento trades/TBBO use Ask for a sell aggressor and Bid for a buy aggressor.
+    If the feed leaves side unspecified, return None so the quote/tick-rule fallback
+    below still preserves behaviour for older rows and non-DataBento sources.
+    """
+    if side is None:
+        return None
+    if isinstance(side, TradeSide):
+        return side
+    raw = str(side).strip().upper()
+    if not raw:
+        return None
+    if raw in {"B", "BID", "BUY"} or raw.endswith(".BID"):
+        return TradeSide.BUY
+    if raw in {"A", "ASK", "SELL"} or raw.endswith(".ASK"):
+        return TradeSide.SELL
+    if raw in {"N", "NONE", "NEUTRAL"} or raw.endswith(".NONE"):
+        return TradeSide.NEUTRAL
+    return None
+
 class TickHandler:
     """Stateful per-symbol classifier (keeps last price/side for the tick rule)."""
 
@@ -52,8 +75,10 @@ class TickHandler:
         volume: float,
         bid: Optional[float] = None,
         ask: Optional[float] = None,
+        side: object = None,
     ) -> Tick:
-        side = classify_side(
+        feed_side = coerce_feed_side(side)
+        side = feed_side if feed_side is not None else classify_side(
             price, bid, ask,
             self._last_price.get(symbol),
             self._last_side.get(symbol, TradeSide.NEUTRAL),

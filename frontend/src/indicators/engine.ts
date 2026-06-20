@@ -1,11 +1,12 @@
 // Indicator engine: the only thing the store calls. It selects a runner for the
 // current execution mode and runs every enabled indicator, aggregating normalized
 // outputs + per-indicator errors. Swapping the execution backend (worker / direct /
-// future backend) happens HERE only — the store + charts are untouched.
+// future backend) happens HERE only - the store + charts are untouched.
 import { DirectRunner } from "./directRunner";
 import { SandboxRunner } from "./sandboxClient";
 import { MAX_CANDLES, MAX_OUTPUTS } from "./types";
 import type {
+  IndicatorDataContext,
   IndicatorExecutionMode,
   IndicatorInstance,
   IndicatorOutput,
@@ -39,6 +40,7 @@ export async function runIndicators(
   candles: FootprintCandle[],
   symbol: string,
   timeframe: string,
+  dataContext?: IndicatorDataContext,
 ): Promise<IndicatorRunSummary> {
   const errors: Record<string, string | null> = {};
 
@@ -67,6 +69,7 @@ export async function runIndicators(
         symbol,
         timeframe,
         maxOutputs: MAX_OUTPUTS,
+        dataContext,
       });
     } catch (err) {
       errors[ind.id] = err instanceof Error ? err.message : String(err);

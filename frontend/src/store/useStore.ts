@@ -21,8 +21,10 @@ import type {
   IndicatorOutput,
 } from "../indicators/types";
 import { runIndicators, disposeSandbox } from "../indicators/engine";
+import { loadIndicatorDataContext } from "../indicators/dataContext";
 import { parseIndicatorMeta } from "../indicators/runtime";
 import { DELTA_SPIKE_SCRIPT, ANCHORED_VWAP_SCRIPT } from "../indicators/examples";
+import { SC1_1604_SCRIPT } from "../indicators/sc1_1604";
 import type { DrawingObject, DrawingTool, SnapMode } from "../drawings/types";
 import { CHART_CANDLE_LIMIT, snapshotRequestForMode } from "../lib/limits";
 
@@ -74,7 +76,7 @@ export const DEFAULT_SETTINGS: FootprintSettings = {
   lockBlockSize: false,
 };
 
-// chart history budget (default 15k; indicators run on a smaller window — see limits.ts)
+// chart history budget (default 15k; indicators run on a smaller window - see limits.ts)
 const MAX_CANDLES = CHART_CANDLE_LIMIT;
 const MAX_ALERTS = 100;
 const MAX_FILLS = 500;
@@ -142,6 +144,27 @@ function migrateAnchoredVwap(i: IndicatorInstance): IndicatorInstance {
   };
 }
 
+function migrateSc1Indicator(i: IndicatorInstance): IndicatorInstance {
+  const script = typeof i.script === "string" ? i.script : "";
+  const isSc1 = i.name === "SC1 1604 Replica" || /["']SC1 1604 Replica["']/.test(script);
+  if (!isSc1 || script === SC1_1604_SCRIPT) return i;
+  return {
+    ...i,
+    name: "SC1 1604 Replica",
+    script: SC1_1604_SCRIPT,
+    overlay: true,
+    inputs: {
+      ...(i.inputs || {}),
+      showI1Markers: true,
+      showI2Markers: false,
+      showI3Markers: false,
+      showSuperSignals: false,
+      showDebugStrength: false,
+    },
+    updatedAt: Date.now(),
+    lastError: null,
+  };
+}
 function loadPersistedIndicators(): PersistedIndicators {
   try {
     const raw = localStorage.getItem(INDICATORS_LS_KEY);
@@ -153,7 +176,8 @@ function loadPersistedIndicators(): PersistedIndicators {
         : []
       )
         .map((i) => {
-          const m = migrateAnchoredVwap(i);
+          let m = migrateAnchoredVwap(i);
+          m = migrateSc1Indicator(m);
           if (m !== i) migrated = true;
           return m;
         })
@@ -225,7 +249,7 @@ function persistDrawings(drawings: DrawingObject[]): void {
 
 // Undo/redo history holds snapshots of the `drawings` array ONLY (small immutable
 // objects produced by each action via map/filter/spread, so the reference is safe to
-// retain — no deep copy needed, and never any candle data). Bounded so a long editing
+// retain - no deep copy needed, and never any candle data). Bounded so a long editing
 // session can't grow memory without limit.
 const UNDO_LIMIT = 100;
 function pushHistory(stack: DrawingObject[][], snapshot: DrawingObject[]): DrawingObject[][] {
@@ -514,7 +538,7 @@ export const useStore = create<State>((set, get) => ({
 
   setSource: (src) => {
     // Use the CANONICAL upper-case symbol: the backend emits live candles as
-    // "6E.V.0", and the store's candle filter is case-sensitive — a lowercase
+    // "6E.V.0", and the store's candle filter is case-sensitive - a lowercase
     // default would render the static REST snapshot but drop every live update.
     const nextSymbol = src === "truedata" ? "NIFTY-I" : "6E.V.0";
     // clear indicatorOutputs (+ invalidate any in-flight run) so stale overlays never
@@ -623,7 +647,7 @@ export const useStore = create<State>((set, get) => ({
       .catch(() => {});
   },
 
-  // Switch the chart's (symbol, timeframe) together — used by Scanner row clicks.
+  // Switch the chart's (symbol, timeframe) together - used by Scanner row clicks.
   // No-op when nothing actually changes, so clicking the already-active row never
   // blanks the chart (the old setSymbol cleared candles even when the symbol was
   // unchanged, and the Header [symbol,timeframe] subscribe effect wouldn't re-fire to
@@ -755,7 +779,7 @@ export const useStore = create<State>((set, get) => ({
     const enabling = target ? !target.enabled : false;
     const indicators = cur.indicators.map((i) =>
       i.id === id
-        ? // re-enabling clears any stale error (e.g. a prior "Indicator timed out —
+        ? // re-enabling clears any stale error (e.g. a prior "Indicator timed out -
           // disabled") so a recovered indicator starts clean
           { ...i, enabled: !i.enabled, updatedAt: Date.now(), ...(enabling ? { lastError: null } : {}) }
         : i,
@@ -771,7 +795,7 @@ export const useStore = create<State>((set, get) => ({
     const prev = get().indicatorExecutionMode;
     if (prev === mode) return;
     // invalidate any in-flight run (a late result must not write outputs/errors for the
-    // old mode) and clear stale overlays immediately — same discipline as a symbol switch
+    // old mode) and clear stale overlays immediately - same discipline as a symbol switch
     bumpRecomputeSeq();
     if (prev === "sandbox") disposeSandbox();
     persistIndicators(get().indicators, mode);
@@ -800,7 +824,8 @@ export const useStore = create<State>((set, get) => ({
     const runMode = mode;
     set({ indicatorBusy: true });
     try {
-      const { outputs, errors } = await runIndicators(mode, s.indicators, s.candles, runSymbol, runTimeframe);
+      const dataContext = await loadIndicatorDataContext(enabled, s.candles, runSymbol, runTimeframe);
+      const { outputs, errors } = await runIndicators(mode, s.indicators, s.candles, runSymbol, runTimeframe, dataContext);
       const cur = get();
       // drop the result if a newer recompute superseded it OR the user switched context
       // (symbol / timeframe / consolidation / execution mode) while it was in flight
@@ -819,7 +844,7 @@ export const useStore = create<State>((set, get) => ({
       if (timedOut.length) {
         const ids = new Set(timedOut.map((i) => i.id));
         const indicators = cur.indicators.map((i) =>
-          ids.has(i.id) ? { ...i, enabled: false, lastError: "Indicator timed out — disabled" } : i,
+          ids.has(i.id) ? { ...i, enabled: false, lastError: "Indicator timed out - disabled" } : i,
         );
         persistIndicators(indicators, cur.indicatorExecutionMode);
         set({ indicators, indicatorOutputs: outputs, indicatorErrors: errors, indicatorBusy: false });
@@ -908,7 +933,7 @@ export const useStore = create<State>((set, get) => ({
   },
 
   // ----------------------------------------------------------- chart drawings
-  // (data-coord objects; no recompute — drawings don't feed indicators)
+  // (data-coord objects; no recompute - drawings don't feed indicators)
   setActiveTool: (tool) =>
     // Arming a drawing tool clears selection and cancels AVWAP placement; the
     // cursor keeps the current selection. Only one chart tool owns the pointer.

@@ -90,8 +90,8 @@ def resolve_databento_symbol(symbol: str) -> tuple[str, str]:
     """Resolve symbol to (dataset, stype_in) for Databento.
 
     Continuous contracts are identified by their DataBento suffix:
-      .c.0  — calendar-roll continuous (rolls on expiry date)
-      .v.0  — volume-roll continuous (rolls when the next contract overtakes in volume)
+      .c.0  - calendar-roll continuous (rolls on expiry date)
+      .v.0  - volume-roll continuous (rolls when the next contract overtakes in volume)
     Both route to GLBX.MDP3 with stype_in='continuous'.
 
     Standard US equities (AAPL, MSFT) route to DBEQ.BASIC with stype_in='raw_symbol'.
@@ -130,7 +130,7 @@ class DatabentoClient:
         self.live_clients: dict[str, db.Live] = {}
         # Tick queue + the main event loop, both bound in start() on the running loop.
         # The SDK callback runs on Databento's background thread and hands records to
-        # this loop via loop.call_soon_threadsafe (see _cb) — a plain thread queue +
+        # this loop via loop.call_soon_threadsafe (see _cb) - a plain thread queue +
         # poll silently delivered nothing inside uvicorn's loop, so we wake it explicitly.
         self._aq: "Optional[asyncio.Queue[tuple[str, any]]]" = None
         self._main_loop: Optional[asyncio.AbstractEventLoop] = None
@@ -366,7 +366,7 @@ class DatabentoClient:
 
     def _enqueue(self, item: "tuple[str, any]") -> None:
         """Put a (dataset, record) onto the asyncio queue. Always runs on the main
-        loop — directly for simulator ticks, via call_soon_threadsafe for live SDK
+        loop - directly for simulator ticks, via call_soon_threadsafe for live SDK
         records arriving on Databento's background thread."""
         aq = self._aq
         if aq is None:
@@ -378,7 +378,7 @@ class DatabentoClient:
 
     async def _drain_queue(self) -> None:
         """Single ordered consumer: pull ticks from the asyncio queue (woken by
-        call_soon_threadsafe / simulator puts — no busy polling) into on_tick."""
+        call_soon_threadsafe / simulator puts - no busy polling) into on_tick."""
         while self._running:
             if self._aq is None:
                 await asyncio.sleep(0.05)
@@ -448,6 +448,7 @@ class DatabentoClient:
                     "volume": vol_val,
                     "bid": bid_val,
                     "ask": ask_val,
+                    "side": getattr(record, "side", None),
                 }
             except Exception:
                 log.exception("Databento record parse error; dropping record")
@@ -560,5 +561,6 @@ class DatabentoClient:
                 "volume": vol_val,
                 "bid": bid_val,
                 "ask": ask_val,
+                "side": getattr(rec, "side", None),
             })
         return out
