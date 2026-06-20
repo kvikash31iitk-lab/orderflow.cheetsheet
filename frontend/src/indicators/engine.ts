@@ -5,6 +5,7 @@
 import { DirectRunner } from "./directRunner";
 import { SandboxRunner } from "./sandboxClient";
 import { MAX_CANDLES, MAX_OUTPUTS } from "./types";
+import { isIndicatorVisibleOnTimeframe } from "./visibility";
 import type {
   IndicatorDataContext,
   IndicatorExecutionMode,
@@ -57,7 +58,8 @@ export async function runIndicators(
 
   // sequential: keeps the single sandbox worker handling one script at a time
   for (const ind of indicators) {
-    if (!ind.enabled) {
+    // disabled OR hidden on the current interval -> no outputs (still listed in legend)
+    if (!ind.enabled || !isIndicatorVisibleOnTimeframe(ind, timeframe)) {
       errors[ind.id] = null;
       continue;
     }

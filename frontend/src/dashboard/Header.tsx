@@ -60,7 +60,10 @@ export default function Header() {
   const [symbols, setSymbols] = useState<string[]>(["NIFTY-I", "BANKNIFTY-I", "FINNIFTY-I", "MIDCPNIFTY-I"]);
   const [tfs, setTfs] = useState<string[]>(DEFAULT_TFS);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [indicatorsOpen, setIndicatorsOpen] = useState(false);
+  // ƒx panel open state lives in the store so the on-chart indicator legend / context
+  // menu can also open it ("Manage indicators").
+  const indicatorsOpen = useStore((s) => s.indicatorsPanelOpen);
+  const setIndicatorsOpen = useStore((s) => s.setIndicatorsPanelOpen);
   const [avwapMgrOpen, setAvwapMgrOpen] = useState(false);
 
   useEffect(() => {

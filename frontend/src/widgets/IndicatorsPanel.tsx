@@ -44,6 +44,8 @@ export default function IndicatorsPanel({ open, onClose }: { open: boolean; onCl
       title="ƒx Indicators"
       open={open}
       onClose={onClose}
+      closeOnOutside
+      closeOnEscape
       defaultRect={{ w: 640, h: 580 }}
       minW={360}
       minH={300}
@@ -71,7 +73,11 @@ export default function IndicatorsPanel({ open, onClose }: { open: boolean; onCl
           {EXAMPLES.map((ex) => (
             <button
               key={ex.name}
-              onClick={() => addIndicator(ex.script)}
+              onClick={() => {
+                // TradingView-style: choosing an indicator adds it and closes the dialog
+                addIndicator(ex.script);
+                onClose();
+              }}
               className="rounded border border-terminal-border bg-terminal-bg px-2 py-0.5 text-[11px] font-semibold text-flow-buyHi hover:bg-terminal-border"
             >
               + {ex.name}

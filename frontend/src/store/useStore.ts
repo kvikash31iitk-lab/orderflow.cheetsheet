@@ -19,6 +19,7 @@ import type {
   IndicatorExecutionMode,
   IndicatorInstance,
   IndicatorOutput,
+  IndicatorVisibility,
 } from "../indicators/types";
 import { runIndicators, disposeSandbox } from "../indicators/engine";
 import { loadIndicatorDataContext } from "../indicators/dataContext";
@@ -409,6 +410,11 @@ interface State {
   pendingAnchorIndicatorId: string | null;
   // toolbar placement mode: drop a NEW Anchored VWAP on the next candle click (null = off)
   pendingAnchorTool: "anchored-vwap" | null;
+  // indicator-management UI (TradingView-style): the ƒx panel + the per-indicator
+  // Settings / Source-code dialogs (each holds the target instance id, null = closed).
+  indicatorsPanelOpen: boolean;
+  settingsIndicatorId: string | null;
+  sourceIndicatorId: string | null;
 
   // chart drawings (objects) + floating workspace windows
   drawings: DrawingObject[];
@@ -459,6 +465,15 @@ interface State {
   beginAnchoredVwapPlacement: () => void;
   addAnchoredVwapAt: (anchorTime: number, anchorSymbol?: string) => void;
   removeAllAnchoredVwaps: () => void;
+  // indicator-management UI actions (legend / context menu / dialogs)
+  setIndicatorsPanelOpen: (open: boolean) => void;
+  setSettingsIndicatorId: (id: string | null) => void;
+  setSourceIndicatorId: (id: string | null) => void;
+  moveIndicator: (id: string, dir: -1 | 1) => void;
+  duplicateIndicator: (id: string) => void;
+  renameIndicator: (id: string, name: string) => void;
+  setIndicatorVisibility: (id: string, visibility: IndicatorVisibility) => void;
+  resetIndicatorInputs: (id: string) => void;
   // drawing-object actions
   setActiveTool: (tool: DrawingTool) => void;
   addDrawing: (d: DrawingObject) => void;
@@ -525,6 +540,9 @@ export const useStore = create<State>((set, get) => ({
   indicatorErrors: {},
   pendingAnchorIndicatorId: null,
   pendingAnchorTool: null,
+  indicatorsPanelOpen: false,
+  settingsIndicatorId: null,
+  sourceIndicatorId: null,
 
   drawings: persistedDrawings,
   activeTool: "select",
@@ -887,6 +905,81 @@ export const useStore = create<State>((set, get) => ({
     const errs = { ...cur.indicatorErrors };
     delete errs[indicatorId];
     set({ indicators, indicatorErrors: errs, pendingAnchorIndicatorId: null, pendingAnchorTool: null });
+    persistIndicators(indicators, cur.indicatorExecutionMode);
+    scheduleRecompute(50);
+  },
+
+  // ----- indicator-management UI (legend / context menu / dialogs) -----
+  setIndicatorsPanelOpen: (open) => set({ indicatorsPanelOpen: open }),
+  setSettingsIndicatorId: (id) => set({ settingsIndicatorId: id }),
+  setSourceIndicatorId: (id) => set({ sourceIndicatorId: id }),
+
+  moveIndicator: (id, dir) => {
+    const cur = get();
+    const arr = cur.indicators.slice();
+    const i = arr.findIndex((x) => x.id === id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= arr.length) return;
+    const tmp = arr[i];
+    arr[i] = arr[j];
+    arr[j] = tmp;
+    set({ indicators: arr });
+    persistIndicators(arr, cur.indicatorExecutionMode);
+    scheduleRecompute(50);
+  },
+
+  duplicateIndicator: (id) => {
+    const cur = get();
+    const idx = cur.indicators.findIndex((x) => x.id === id);
+    if (idx < 0) return;
+    const src = cur.indicators[idx];
+    const copy: IndicatorInstance = {
+      ...src,
+      id: uid(),
+      name: `${src.name} (copy)`,
+      inputs: { ...src.inputs },
+      visibility: src.visibility
+        ? {
+            ticks: { ...src.visibility.ticks },
+            minutes: { ...src.visibility.minutes },
+            hours: { ...src.visibility.hours },
+            days: { ...src.visibility.days },
+          }
+        : undefined,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      lastError: null,
+    };
+    const indicators = [...cur.indicators.slice(0, idx + 1), copy, ...cur.indicators.slice(idx + 1)];
+    set({ indicators });
+    persistIndicators(indicators, cur.indicatorExecutionMode);
+    scheduleRecompute(50);
+  },
+
+  renameIndicator: (id, name) => {
+    const cur = get();
+    const clean = String(name).trim().slice(0, 64) || "Indicator";
+    const indicators = cur.indicators.map((i) => (i.id === id ? { ...i, name: clean, updatedAt: Date.now() } : i));
+    set({ indicators });
+    persistIndicators(indicators, cur.indicatorExecutionMode);
+  },
+
+  setIndicatorVisibility: (id, visibility) => {
+    const cur = get();
+    const indicators = cur.indicators.map((i) => (i.id === id ? { ...i, visibility, updatedAt: Date.now() } : i));
+    set({ indicators });
+    persistIndicators(indicators, cur.indicatorExecutionMode);
+    scheduleRecompute(50);
+  },
+
+  resetIndicatorInputs: (id) => {
+    const cur = get();
+    const indicators = cur.indicators.map((i) => {
+      if (i.id !== id) return i;
+      const meta = parseIndicatorMeta(i.script);
+      return { ...i, inputs: { ...meta.inputs }, visibility: undefined, updatedAt: Date.now() };
+    });
+    set({ indicators });
     persistIndicators(indicators, cur.indicatorExecutionMode);
     scheduleRecompute(50);
   },

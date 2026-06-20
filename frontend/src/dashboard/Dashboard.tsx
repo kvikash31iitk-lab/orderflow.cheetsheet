@@ -12,6 +12,8 @@ import ResearchPanel from "../widgets/ResearchPanel";
 import Scanner from "../widgets/Scanner";
 import DrawingToolbar from "./DrawingToolbar";
 import ObjectTreePanel from "../widgets/ObjectTreePanel";
+import IndicatorSettingsDialog from "../widgets/IndicatorSettingsDialog";
+import IndicatorSourceDialog from "../widgets/IndicatorSourceDialog";
 import Splitter from "../components/Splitter";
 
 type View = "terminal" | "research";
@@ -110,6 +112,8 @@ export default function Dashboard() {
     <div className="flex h-full flex-col bg-terminal-bg">
       <BlockSizeModal />
       <ObjectTreePanel open={objectsOpen} onClose={() => setObjectsOpen(false)} />
+      <IndicatorSettingsDialog />
+      <IndicatorSourceDialog />
       <Header />
       <Tabs view={view} setView={setView} />
 

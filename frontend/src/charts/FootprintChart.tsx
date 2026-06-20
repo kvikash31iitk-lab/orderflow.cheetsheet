@@ -16,6 +16,7 @@ import { createDrawingController } from "../drawings/drawingController";
 import { toolDef } from "../drawings/types";
 import DrawingSelectionToolbar from "../widgets/DrawingSelectionToolbar";
 import AvwapSelectionToolbar from "../widgets/AvwapSelectionToolbar";
+import IndicatorLegend from "../widgets/IndicatorLegend";
 import {
   DARK_PALETTE,
   LIGHT_PALETTE,
@@ -215,6 +216,7 @@ export default function FootprintChart() {
           </div>
         </div>
       )}
+      <IndicatorLegend />
       <DrawingSelectionToolbar />
       <AvwapSelectionToolbar />
       {activeTool !== "select" && (

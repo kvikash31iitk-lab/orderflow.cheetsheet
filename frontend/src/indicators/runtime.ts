@@ -110,6 +110,47 @@ export function parseIndicatorMeta(script: string): IndicatorMeta {
   return meta;
 }
 
+// Statically extract the script's DEFAULT `inputs: { ... }` object so the settings
+// dialog can render a control per input with its default value. parseIndicatorMeta
+// intentionally skips this; here we isolate the balanced `{...}` after `inputs:` and
+// evaluate just that object literal (it is a pure literal in every built-in script —
+// numbers/strings/bools, comments + trailing commas + simple arithmetic like 5/60 ok,
+// no braces inside string values). Returns {} on any failure (dialog then shows none).
+export function parseIndicatorInputs(script: string): Record<string, number | string | boolean> {
+  try {
+    if (typeof script !== "string" || script.length > MAX_SCRIPT_LENGTH) return {};
+    const m = /\binputs\s*:\s*\{/.exec(script);
+    if (!m) return {};
+    const open = m.index + m[0].length - 1; // index of the "{"
+    let depth = 0;
+    let end = -1;
+    for (let i = open; i < script.length; i++) {
+      const ch = script[i];
+      if (ch === "{") depth++;
+      else if (ch === "}") {
+        depth--;
+        if (depth === 0) {
+          end = i + 1;
+          break;
+        }
+      }
+    }
+    if (end < 0) return {};
+    const objText = script.slice(open, end);
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    const obj = new Function(`"use strict"; return (${objText});`)() as Record<string, unknown>;
+    const out: Record<string, number | string | boolean> = {};
+    if (obj && typeof obj === "object") {
+      for (const [k, v] of Object.entries(obj)) {
+        if (typeof v === "number" || typeof v === "string" || typeof v === "boolean") out[k] = v;
+      }
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 export function executeIndicatorScript(request: IndicatorRunRequest): IndicatorRunResult {
   const start = nowMs();
   const instance = request.indicator;

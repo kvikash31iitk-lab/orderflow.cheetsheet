@@ -22,6 +22,21 @@ export const COLD_START_TIMEOUT_MS = 5000;
 
 export type IndicatorExecutionMode = "sandbox" | "direct" | "disabled";
 
+// TradingView-style per-interval visibility. Each category gates the chart timeframes
+// that map to it (ticks / minutes / hours / days), with an inclusive numeric [from,to]
+// range. Absent (undefined) on an instance => always visible (back-compat default).
+export interface IndicatorVisibilityCategory {
+  enabled: boolean;
+  from: number;
+  to: number;
+}
+export interface IndicatorVisibility {
+  ticks: IndicatorVisibilityCategory;
+  minutes: IndicatorVisibilityCategory;
+  hours: IndicatorVisibilityCategory;
+  days: IndicatorVisibilityCategory;
+}
+
 export interface IndicatorInstance {
   id: string;
   name: string;
@@ -35,6 +50,8 @@ export interface IndicatorInstance {
   // coarse classification derived from the script (e.g. "anchored-vwap") so the panel
   // can offer tool-specific UI (anchor picking) without string-matching the name.
   kind?: string;
+  // per-instance interval visibility (undefined => visible on all intervals).
+  visibility?: IndicatorVisibility;
 }
 
 export interface IndicatorRunRequest {

@@ -28,6 +28,9 @@ interface FloatingWindowProps {
   children: ReactNode;
   headerExtra?: ReactNode;
   bodyClassName?: string;
+  // opt-in dismissal (default off; most workspace windows close only via ×):
+  closeOnOutside?: boolean; // pointer-down anywhere outside the window closes it
+  closeOnEscape?: boolean; // Escape closes it (ignored while editing a field is fine)
 }
 
 // shared focus counter; windows replace the old z-50 modals so we start at 50.
@@ -68,12 +71,15 @@ export default function FloatingWindow({
   children,
   headerExtra,
   bodyClassName,
+  closeOnOutside = false,
+  closeOnEscape = false,
 }: FloatingWindowProps) {
   const storedRect = useStore((s) => s.windows[id]);
   const setWindowRect = useStore((s) => s.setWindowRect);
 
   const [rect, setRect] = useState<WindowRect>(() => resolveInitial(storedRect, defaultRect));
   const [z, setZ] = useState<number>(() => nextZ());
+  const winRef = useRef<HTMLDivElement>(null);
   const rectRef = useRef(rect);
   rectRef.current = rect;
   const dragRef = useRef<{ ox: number; oy: number; px: number; py: number } | null>(null);
@@ -97,6 +103,31 @@ export default function FloatingWindow({
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, [open]);
+
+  // opt-in dismissal: pointer-down outside the window, and/or Escape. A ref to the
+  // latest onClose keeps the listener attached across frequent parent re-renders.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    if (!open || (!closeOnOutside && !closeOnEscape)) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (!closeOnOutside) return;
+      const el = winRef.current;
+      if (el && e.target instanceof Node && !el.contains(e.target)) onCloseRef.current();
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (closeOnEscape && e.key === "Escape") onCloseRef.current();
+    };
+    // attach synchronously: the click that OPENED the window already finished its
+    // pointerdown before this effect runs (open is via a React click handler), so this
+    // can't self-close — and there is no setTimeout race for an immediate outside click.
+    if (closeOnOutside) document.addEventListener("pointerdown", onPointerDown, true);
+    if (closeOnEscape) document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open, closeOnOutside, closeOnEscape]);
 
   const commit = useCallback(
     (r: WindowRect) => {
@@ -194,6 +225,7 @@ export default function FloatingWindow({
   const edge = "absolute select-none touch-none";
   return (
     <div
+      ref={winRef}
       className="fixed flex flex-col overflow-hidden rounded-lg border border-terminal-border bg-terminal-panel shadow-2xl shadow-black/50"
       style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h, zIndex: z }}
       onPointerDown={focus}
