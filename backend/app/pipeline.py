@@ -21,13 +21,14 @@ from typing import Optional
 from .alerts.alert_engine import Alert, AlertEngine
 from .alerts.notifiers import Notifier
 from .api.websocket import ConnectionManager
-from .config import Settings, settings as default_settings
+from .config import Settings, settings as default_settings, timeframe_to_ms
 from .market_data.aggregator import (
     AggregatorManager,
     CandleEvent,
     consolidate_candle,
     default_row_size,
 )
+from .market_data.seconds_aggregator import aggregate_ticks_to_candles
 from .market_data.tick_handler import TickHandler
 from .market_data.websocket_client import MarketDataClient
 from .orderflow.models import FootprintCandle
@@ -313,6 +314,37 @@ class Pipeline:
         if not cells:
             rows = [{**r, "cells": []} for r in rows]
 
+        return rows
+
+    async def snapshot_seconds(self, symbol: str, timeframe: str, limit: int = 25000,
+                               row_size: Optional[float] = None, cells: bool = False) -> list[dict]:
+        """On-demand sub-minute (e.g. 5s) footprint candles, reconstructed from the
+        stored `ticks` table (NOT from persisted minute candles — seconds bars are never
+        persisted). Bounded: we only rebuild the most-recent `limit` buckets, and the
+        underlying tick scan is capped (settings.seconds_tick_fetch_cap). Returns the last
+        `limit` candles oldest-first.
+
+        Used by indicator lower-timeframe orderflow (SC1 V4's 5S child bars). cells default
+        False — callers want the orderflow scalars (totalAskVolume/totalBidVolume/delta),
+        not per-price rows.
+        """
+        bucket_ms = timeframe_to_ms(timeframe)
+        if not bucket_ms or bucket_ms <= 0:
+            return []
+        rs = row_size if row_size is not None else default_row_size(symbol)
+        rng = await self.pg.ticks_minmax(symbol)
+        if rng is None:
+            return []
+        min_ts, max_ts = rng
+        # window = the most-recent `limit` buckets; floor at the first stored tick.
+        since = max(min_ts, max_ts - limit * bucket_ms)
+        ticks = await self.pg.recent_ticks(symbol, since, limit=self.cfg.seconds_tick_fetch_cap)
+        if not ticks:
+            return []
+        candles = aggregate_ticks_to_candles(ticks, symbol, timeframe, bucket_ms, rs)
+        rows = [c.to_dict() for c in candles][-limit:]
+        if not cells:
+            rows = [{**r, "cells": []} for r in rows]
         return rows
 
     def scanner(self) -> list[dict]:

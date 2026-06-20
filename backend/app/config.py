@@ -5,7 +5,9 @@ all tuning knobs live in one typed, documented place.
 """
 from __future__ import annotations
 
+import re
 from functools import lru_cache
+from typing import Optional
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -25,6 +27,42 @@ TIMEFRAME_MINUTES: dict[str, int] = {
     "4h": 240,
     "1D": 1440,
 }
+
+# Sub-minute ("N-second") timeframes are NOT part of the live aggregation / chart set
+# (they stay out of TIMEFRAME_MINUTES so they never appear in the chart selector or get
+# continuously generated + persisted). They are reconstructed ON DEMAND from stored
+# ticks for indicator lower-timeframe orderflow (e.g. SC1 V4's 5S child bars). The
+# `/api/footprints` endpoint routes a seconds timeframe to pipeline.snapshot_seconds.
+_SECONDS_TF_RE = re.compile(r"^(\d+)\s*[sS]$")
+
+
+def is_seconds_timeframe(tf: str) -> bool:
+    """True for an N-second timeframe like '5s'/'5S' (1..59s), which is served on
+    demand from ticks rather than from stored minute candles."""
+    if not isinstance(tf, str):
+        return False
+    m = _SECONDS_TF_RE.match(tf.strip())
+    if not m:
+        return False
+    secs = int(m.group(1))
+    return 1 <= secs <= 59
+
+
+def timeframe_to_ms(tf: str) -> Optional[int]:
+    """Bucket size in milliseconds for a timeframe, or None if unrecognized.
+
+    Supports the minute keys in TIMEFRAME_MINUTES ('tick' -> 0) PLUS N-second
+    timeframes ('5s'/'5S' -> 5000). Returns an int so bucket boundaries stay exact
+    integer epoch-ms (no float drift)."""
+    if isinstance(tf, str) and tf in TIMEFRAME_MINUTES:
+        return TIMEFRAME_MINUTES[tf] * 60_000
+    if isinstance(tf, str):
+        m = _SECONDS_TF_RE.match(tf.strip())
+        if m:
+            secs = int(m.group(1))
+            if 1 <= secs <= 59:
+                return secs * 1000
+    return None
 
 
 class Settings(BaseSettings):
@@ -70,6 +108,11 @@ class Settings(BaseSettings):
     default_snapshot_limit: int = 15000
     websocket_snapshot_limit: int = 15000
     max_snapshot_limit: int = 25000
+    # On-demand sub-minute (e.g. 5s) reconstruction from ticks: hard caps so a request
+    # can't fan out into millions of buckets or an unbounded tick scan. 25000 5s bars
+    # ~= 34.7h; the tick fetch is additionally bounded to the most-recent N ticks.
+    max_seconds_snapshot_limit: int = 25000
+    seconds_tick_fetch_cap: int = 1_500_000
 
     # --- Engine tuning ---
     default_timeframe: str = "2m"

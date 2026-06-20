@@ -183,6 +183,30 @@ class PostgresRepo:
                 symbol, start_ms, end_ms, limit)
         return [dict(r) for r in rows]
 
+    async def ticks_minmax(self, symbol: str) -> Optional[tuple[int, int]]:
+        """(min_ts, max_ts) epoch-ms of stored ticks for a symbol, or None if none."""
+        if not self.enabled:
+            return None
+        async with self.pool.acquire() as con:
+            row = await con.fetchrow(
+                "SELECT min(ts) AS lo, max(ts) AS hi FROM ticks WHERE symbol=$1", symbol)
+        if not row or row["hi"] is None:
+            return None
+        return int(row["lo"]), int(row["hi"])
+
+    async def recent_ticks(self, symbol: str, since_ms: int, limit: int = 1_500_000) -> list[dict]:
+        """The MOST-RECENT ticks at/after `since_ms`, returned ascending by ts. Uses the
+        (symbol, ts) index + a DESC LIMIT so a busy window keeps its latest ticks (not the
+        earliest), then reverses to chronological order for bucketing."""
+        if not self.enabled:
+            return []
+        async with self.pool.acquire() as con:
+            rows = await con.fetch(
+                "SELECT symbol, ts, price, volume, bid, ask, side FROM ticks "
+                "WHERE symbol=$1 AND ts>=$2 ORDER BY ts DESC LIMIT $3",
+                symbol, since_ms, limit)
+        return [dict(r) for r in reversed(rows)]
+
     async def recent_alerts(self, limit: int = 100) -> list[dict]:
         if not self.enabled:
             return []

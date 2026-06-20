@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from ..config import TIMEFRAME_MINUTES, Settings, settings
+from ..config import TIMEFRAME_MINUTES, Settings, is_seconds_timeframe, settings
 from ..orderflow import research
 from ..orderflow.models import FootprintCandle
 from ..market_data.aggregator import default_row_size, get_symbol_config, SYMBOL_CONFIG
@@ -68,6 +68,13 @@ async def footprints(req: Request, symbol: str, timeframe: str | None = None,
                      limit: int | None = None, rowSize: float | None = None,
                      cells: bool = True) -> dict:
     tf = timeframe or settings.default_timeframe
+    # Sub-minute (e.g. 5S) timeframes are reconstructed on demand from ticks via a
+    # separate, tightly-clamped path (they are never stored as minute candles).
+    if is_seconds_timeframe(tf):
+        lim = settings.max_seconds_snapshot_limit if limit is None else limit
+        lim = max(1, min(lim, settings.max_seconds_snapshot_limit))
+        candles = await _pipeline(req).snapshot_seconds(symbol.upper(), tf, lim, rowSize, cells=cells)
+        return {"symbol": symbol.upper(), "timeframe": tf, "candles": candles}
     # default to the configured snapshot size; hard-clamp so no client can request an
     # unbounded payload (footprint candles are heavy).
     lim = settings.default_snapshot_limit if limit is None else limit

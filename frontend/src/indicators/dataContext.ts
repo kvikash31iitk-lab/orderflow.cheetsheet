@@ -4,6 +4,11 @@ import type { IndicatorDataContext, IndicatorDataStatus, IndicatorInstance } fro
 
 const TF_MINUTES: Record<string, number> = {
   tick: 0,
+  // sub-minute child timeframes for indicator lower-orderflow (SC1 V4 5S). Both cases
+  // are accepted so a Pine-style literal requestFootprint("5S") prefetches + keys the
+  // same bucket the runtime later reads. 5s = 5/60 minute.
+  "5s": 5 / 60,
+  "5S": 5 / 60,
   "1m": 1,
   "2m": 2,
   "3m": 3,
@@ -14,6 +19,12 @@ const TF_MINUTES: Record<string, number> = {
   "4h": 240,
   "1D": 1440,
 };
+
+// Seconds child timeframes are reconstructed on-demand from ticks server-side; we only
+// need the orderflow scalars, so fetch them cells-free (lighter payload).
+function wantsCells(tf: string): boolean {
+  return !/^\d+s$/i.test(tf);
+}
 
 const MAX_PREFETCH_LIMIT = 25000;
 const CACHE_TTL_MS = 2500;
@@ -107,7 +118,7 @@ export async function loadIndicatorDataContext(
     }
     const limit = estimateLimit(timeframe, tf, candles.length);
     tasks.push(
-      cachedFootprints(symbol, tf, limit, true)
+      cachedFootprints(symbol, tf, limit, wantsCells(tf))
         .then((rows) => {
           footprints[tf] = rows;
           status[`footprint:${tf}`] = { ok: true, candles: rows.length };
