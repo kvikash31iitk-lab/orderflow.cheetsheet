@@ -257,6 +257,26 @@ async def test_service_coverage_run_compare_sweep_end_to_end():
     assert objs == sorted(objs, reverse=True)
 
 
+async def test_service_payloads_are_json_safe_with_nonfinite_data():
+    """A NaN/Inf anywhere in stored prices must never produce a non-JSON-compliant payload
+    (Starlette renders with allow_nan=False -> 500 on the shared live worker otherwise)."""
+    import json
+    import math as _m
+    pg = _FakePg()
+    # poison a couple of candles with non-finite OHLC
+    pg.candles[120]["high"] = float("nan")
+    pg.candles[150]["close"] = float("inf")
+    cfg = Sc1Config(skipConflictingBars=False, i1_minStrength=30.0, i1_netEdgeSignalThreshold=10.0)
+    rep = await sc1_service.run(pg, "GC", "3m", None, None, cfg, use_5s=True)
+    assert rep["ok"]
+    comp = sc1_service.compare_exits(rep["runId"], ExitConfig())
+    sw = await sc1_service.sweep(pg, "GC", "3m", None, None, cfg,
+                                 {"i1_minStrength": [30, 45]}, ExitConfig())
+    # allow_nan=False mirrors Starlette's JSONResponse.render; must not raise
+    for payload in (rep, comp, sw):
+        json.dumps(payload, allow_nan=False)
+
+
 async def test_service_run_handles_empty_symbol():
     class _Empty:
         async def ticks_minmax(self, s): return None

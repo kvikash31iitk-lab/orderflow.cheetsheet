@@ -11,6 +11,7 @@ applied round-trip and reported, never hidden.
 from __future__ import annotations
 
 import bisect
+import math
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Optional
@@ -44,7 +45,9 @@ class TradeOutcome:
     def to_dict(self) -> dict:
         d = asdict(self)
         for k in ("entry_price", "exit_price", "gross_points", "net_points", "r_multiple", "mae", "mfe", "cost_points", "slippage_points"):
-            d[k] = round(d[k], 4)
+            # coerce non-finite -> None so a bad/NaN stored price can never make the
+            # response non-JSON-compliant (Starlette uses allow_nan=False -> 500 otherwise)
+            d[k] = round(d[k], 4) if math.isfinite(d[k]) else None
         return d
 
 

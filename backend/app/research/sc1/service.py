@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import math
 from collections import OrderedDict
 from datetime import datetime, timezone
 from statistics import median
@@ -41,6 +42,20 @@ def _cache_put(run_id: str, payload: dict) -> None:
         _RUN_CACHE.popitem(last=False)
 
 
+def _scrub(o):
+    """Replace non-finite floats (NaN/Inf) with None anywhere in a payload. Starlette
+    serialises with allow_nan=False, so a single NaN — e.g. from one malformed stored
+    price — would otherwise 500 the WHOLE response on the shared single live worker.
+    Applied at each SC1 endpoint's boundary (runs in the compute thread, off the loop)."""
+    if isinstance(o, float):
+        return o if math.isfinite(o) else None
+    if isinstance(o, dict):
+        return {k: _scrub(v) for k, v in o.items()}
+    if isinstance(o, list):
+        return [_scrub(v) for v in o]
+    return o
+
+
 # --------------------------------------------------------------------- coverage
 async def coverage(pg, symbol: str) -> dict:
     symbol = symbol.upper()
@@ -63,7 +78,7 @@ async def coverage(pg, symbol: str) -> dict:
     if not out["timeframes"]:
         out["notes"].append("No stored footprint candles for this symbol.")
     out["notes"].append("Only ~recent VPS data is available; treat results as a HARNESS validation set, not a 5-year backtest.")
-    return out
+    return _scrub(out)
 
 
 # ----------------------------------------------------------------- data loading
@@ -117,14 +132,14 @@ def _run_compute(rows: list[dict], five_s, tick_ts, tick_px, cfg: Sc1Config,
     run_id = hashlib.sha1(f"{symbol}:{timeframe}:{rows[0]['startTime']}:{rows[-1]['startTime']}:{cfg.config_hash()}:{use_5s}".encode()).hexdigest()[:12]
     # cache ONLY candles + candidates (with their resolved entries) — never the tick arrays
     _cache_put(run_id, {"symbol": symbol, "timeframe": timeframe, "candles": rows, "candidates": cands, "cfg": cfg})
-    return {
+    return _scrub({
         "ok": True, "runId": run_id, "symbol": symbol, "timeframe": timeframe,
         "configHash": cfg.config_hash(), "config": cfg.to_dict(),
         "range": {"minStart": rows[0]["startTime"], "maxStart": rows[-1]["startTime"], "bars": res["n"]},
         "orderflow": {"used5s": res["used5s"], "totalBars": res["n"], "source5sActive": used_5s_window},
         "inventory": inv, "byDay": by_day,
         "candidates": cands,
-    }
+    })
 
 
 async def run(pg, symbol: str, timeframe: str, start_ms: Optional[int], end_ms: Optional[int],
@@ -143,18 +158,19 @@ def _summarize(outcomes: list[TradeOutcome]) -> dict:
         return {"n": 0, "expectancyR": 0.0, "winRate": 0.0, "profitFactor": 0.0,
                 "avgMae": 0.0, "avgMfe": 0.0, "medMae": 0.0, "medMfe": 0.0, "maxDrawdownR": 0.0,
                 "long": 0, "short": 0}
-    rs = [o.r_multiple for o in outcomes]
-    wins = [o.net_points for o in outcomes if o.net_points > 0]
-    losses = [o.net_points for o in outcomes if o.net_points <= 0]
-    maes = [o.mae for o in outcomes]
-    mfes = [o.mfe for o in outcomes]
+    # filter non-finite so one bad trade can't poison an aggregate into NaN
+    rs = [o.r_multiple for o in outcomes if math.isfinite(o.r_multiple)] or [0.0]
+    wins = [o.net_points for o in outcomes if math.isfinite(o.net_points) and o.net_points > 0]
+    losses = [o.net_points for o in outcomes if math.isfinite(o.net_points) and o.net_points <= 0]
+    maes = [o.mae for o in outcomes if math.isfinite(o.mae)] or [0.0]
+    mfes = [o.mfe for o in outcomes if math.isfinite(o.mfe)] or [0.0]
     # equity curve in R (by entry time) for drawdown
     seq = sorted(outcomes, key=lambda o: o.entry_time)
     eq = 0.0
     peak = 0.0
     mdd = 0.0
     for o in seq:
-        eq += o.r_multiple
+        eq += o.r_multiple if math.isfinite(o.r_multiple) else 0.0
         peak = max(peak, eq)
         mdd = max(mdd, peak - eq)
     pf = (sum(wins) / abs(sum(losses))) if losses and sum(losses) != 0 else (float("inf") if wins else 0.0)
@@ -219,11 +235,11 @@ def compare_exits(run_id: str, exit_cfg: ExitConfig, classes: Optional[list[str]
             row["cells"][m] = _summarize(sub)
         matrix.append(row)
     overall = {m: _summarize([o for o in outs if o.exit_model == m]) for m in models}
-    return {
+    return _scrub({
         "ok": True, "runId": run_id, "models": models, "matrix": matrix, "overall": overall,
         "exitConfig": exit_cfg.to_dict(),
         "trades": [o.to_dict() for o in outs],
-    }
+    })
 
 
 # ----------------------------------------------------------------------- sweep
@@ -265,8 +281,8 @@ def _sweep_compute(rows, five_s, tick_ts, tick_px, base_cfg: Sc1Config, grid: di
     note = "Bounded grid on ~recent data — validation harness only; confirm on 5-year GC before adopting."
     if truncated:
         note += f" Grid truncated to the first {MAX_SWEEP_COMBOS} combos."
-    return {"ok": True, "symbol": symbol, "timeframe": timeframe, "exitModel": exit_model,
-            "baselineHash": base_hash, "leaderboard": rows_lb, "note": note}
+    return _scrub({"ok": True, "symbol": symbol, "timeframe": timeframe, "exitModel": exit_model,
+                   "baselineHash": base_hash, "leaderboard": rows_lb, "note": note})
 
 
 async def sweep(pg, symbol: str, timeframe: str, start_ms, end_ms, base_cfg: Sc1Config,
