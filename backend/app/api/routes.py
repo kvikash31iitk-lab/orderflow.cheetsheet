@@ -203,6 +203,85 @@ async def research_sync(req: Request, horizon: int = 5) -> dict:
     return {"updated": updated}
 
 
+# ----------------------------- SC1 V4 research lab -----------------------------
+# Deterministic, offline re-implementation of the SC1 super signal (Indicator 1).
+# Does NOT touch the live SC1 V4 indicator; reads stored candles + ticks only.
+from ..research.sc1 import service as sc1_service
+from ..research.sc1.config import ExitConfig, Sc1Config
+
+
+def _sc1_config(overrides: dict | None) -> Sc1Config:
+    cfg = Sc1Config()
+    if overrides:
+        allowed = set(Sc1Config().to_dict().keys())
+        unknown = [k for k in overrides if k not in allowed]
+        if unknown:
+            raise HTTPException(status_code=422, detail=f"unknown sc1 config keys: {unknown}")
+        cfg = cfg.clone(**{k: v for k, v in overrides.items() if k in allowed})
+    return cfg
+
+
+def _exit_config(overrides: dict | None) -> ExitConfig:
+    cfg = ExitConfig()
+    if overrides:
+        for k, v in overrides.items():
+            if hasattr(cfg, k):
+                setattr(cfg, k, v)
+    return cfg
+
+
+class Sc1Run(BaseModel):
+    symbol: str
+    timeframe: str | None = None
+    start: int | None = None        # epoch ms (inclusive)
+    end: int | None = None          # epoch ms (inclusive)
+    use5s: bool = True
+    config: dict = {}               # Sc1Config field overrides
+
+
+class Sc1CompareExits(BaseModel):
+    runId: str
+    classes: list[str] | None = None      # subset of baseline/blocked_by_candle/near_miss
+    exit: dict = {}                       # ExitConfig field overrides
+
+
+class Sc1Sweep(BaseModel):
+    symbol: str
+    timeframe: str | None = None
+    start: int | None = None
+    end: int | None = None
+    use5s: bool = True
+    config: dict = {}                     # base Sc1Config overrides
+    grid: dict[str, list] = {}            # Sc1Config field -> candidate values
+    exit: dict = {}
+    exitModel: str = "fixed_2R"
+
+
+@router.get("/research/sc1/coverage")
+async def sc1_coverage(req: Request, symbol: str) -> dict:
+    return await sc1_service.coverage(_pipeline(req).pg, symbol)
+
+
+@router.post("/research/sc1/run")
+async def sc1_run(req: Request, body: Sc1Run) -> dict:
+    tf = body.timeframe or settings.default_timeframe
+    cfg = _sc1_config(body.config)
+    return await sc1_service.run(_pipeline(req).pg, body.symbol, tf, body.start, body.end, cfg, body.use5s)
+
+
+@router.post("/research/sc1/compare-exits")
+async def sc1_compare_exits(body: Sc1CompareExits) -> dict:
+    return sc1_service.compare_exits(body.runId, _exit_config(body.exit), body.classes)
+
+
+@router.post("/research/sc1/sweep")
+async def sc1_sweep(req: Request, body: Sc1Sweep) -> dict:
+    tf = body.timeframe or settings.default_timeframe
+    base = _sc1_config(body.config)
+    return await sc1_service.sweep(_pipeline(req).pg, body.symbol, tf, body.start, body.end,
+                                   base, body.grid, _exit_config(body.exit), body.exitModel, body.use5s)
+
+
 # ----------------------------- simulated trading -----------------------------
 async def _broadcast_trade(pl) -> None:
     for ev in pl.broker.drain():

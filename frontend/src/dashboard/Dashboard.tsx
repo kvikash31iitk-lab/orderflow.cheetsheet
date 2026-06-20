@@ -9,6 +9,7 @@ import DeltaHistogram from "../widgets/DeltaHistogram";
 import DomLadder from "../widgets/DomLadder";
 import ReplayControls from "../widgets/ReplayControls";
 import ResearchPanel from "../widgets/ResearchPanel";
+import Sc1ResearchLab from "../widgets/Sc1ResearchLab";
 import Scanner from "../widgets/Scanner";
 import DrawingToolbar from "./DrawingToolbar";
 import ObjectTreePanel from "../widgets/ObjectTreePanel";
@@ -16,7 +17,7 @@ import IndicatorSettingsDialog from "../widgets/IndicatorSettingsDialog";
 import IndicatorSourceDialog from "../widgets/IndicatorSourceDialog";
 import Splitter from "../components/Splitter";
 
-type View = "terminal" | "research";
+type View = "terminal" | "research" | "sc1lab";
 
 // min-w-0 lets grid items shrink below their content's min-content width (Task 4)
 function Panel({ title, children, extra }: { title: string; children: ReactNode; extra?: ReactNode }) {
@@ -35,6 +36,7 @@ function Tabs({ view, setView }: { view: View; setView: (v: View) => void }) {
   const tabs: { id: View; label: string }[] = [
     { id: "terminal", label: "Terminal View" },
     { id: "research", label: "Research Suite" },
+    { id: "sc1lab", label: "SC1 Research Lab" },
   ];
   return (
     <div className="flex items-center gap-1 border-b border-terminal-border bg-terminal-panel px-3 py-1">
@@ -120,6 +122,10 @@ export default function Dashboard() {
       {view === "research" ? (
         <div className="min-h-0 flex-1">
           <ResearchPanel />
+        </div>
+      ) : view === "sc1lab" ? (
+        <div className="min-h-0 flex-1">
+          <Sc1ResearchLab />
         </div>
       ) : (
         <div className="flex min-h-0 flex-1">

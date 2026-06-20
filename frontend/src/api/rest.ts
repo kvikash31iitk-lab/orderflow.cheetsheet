@@ -1,4 +1,5 @@
 import type { AlertMsg, Fill, FootprintCandle, Order, Position, ResearchReport, ScannerRow, SymbolConfig } from "../types/orderflow";
+import type { Sc1Coverage, Sc1ExitReport, Sc1RunReport, Sc1SweepReport } from "../types/sc1research";
 
 export interface TradeOrderBody {
   symbol: string;
@@ -62,6 +63,16 @@ export const api = {
     j<{ reports: ResearchReport[] }>("/api/research/sweep", { method: "POST", body: JSON.stringify(body) }),
   researchSync: (horizon = 5) =>
     j<{ updated: number }>(`/api/research/sync?horizon=${horizon}`, { method: "POST" }),
+
+  // SC1 V4 research lab
+  sc1Coverage: (symbol: string) =>
+    j<Sc1Coverage>(`/api/research/sc1/coverage?symbol=${encodeURIComponent(symbol)}`),
+  sc1Run: (body: { symbol: string; timeframe?: string; start?: number | null; end?: number | null; use5s?: boolean; config?: Record<string, number | boolean | string> }) =>
+    j<Sc1RunReport>("/api/research/sc1/run", { method: "POST", body: JSON.stringify(body) }),
+  sc1CompareExits: (body: { runId: string; classes?: string[] | null; exit?: Record<string, number | number[]> }) =>
+    j<Sc1ExitReport>("/api/research/sc1/compare-exits", { method: "POST", body: JSON.stringify(body) }),
+  sc1Sweep: (body: { symbol: string; timeframe?: string; start?: number | null; end?: number | null; use5s?: boolean; config?: Record<string, number | boolean | string>; grid: Record<string, number[]>; exit?: Record<string, number | number[]>; exitModel?: string }) =>
+    j<Sc1SweepReport>("/api/research/sc1/sweep", { method: "POST", body: JSON.stringify(body) }),
 
   // simulated trading
   tradeOrder: (body: TradeOrderBody) =>
