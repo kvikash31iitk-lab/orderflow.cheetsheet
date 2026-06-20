@@ -95,6 +95,7 @@ class Aggregator:
         timeframe: str,
         row_size: Optional[float] = None,
         cfg: Optional[Settings] = None,
+        skip_heavy: bool = False,
     ) -> None:
         if timeframe not in TIMEFRAME_MINUTES:
             raise ValueError(f"unknown timeframe {timeframe!r}")
@@ -103,7 +104,8 @@ class Aggregator:
         self.timeframe = timeframe
         self.row_size = row_size if row_size is not None else default_row_size(symbol)
         self.tf_minutes = TIMEFRAME_MINUTES[timeframe]
-        self.engine = OrderFlowEngine(symbol, timeframe, self.cfg)
+        # skip_heavy -> engine drops the costly numpy detectors (bulk large-TF reaggregation)
+        self.engine = OrderFlowEngine(symbol, timeframe, self.cfg, skip_heavy=skip_heavy)
         self.current: Optional[FootprintCandle] = None
         # session VWAP accumulators (reset on trading-session change — see sessions.py)
         self.session_date: Optional[str] = None  # holds the current session id

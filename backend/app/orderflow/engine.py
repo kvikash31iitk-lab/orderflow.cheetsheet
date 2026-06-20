@@ -28,10 +28,16 @@ class OrderFlowEngine:
         timeframe: str,
         cfg: Optional[Settings] = None,
         history: int = 200,
+        skip_heavy: bool = False,
     ) -> None:
         self.symbol = symbol
         self.timeframe = timeframe
         self.cfg = cfg or default_settings
+        # skip_heavy: drop the expensive numpy detectors (volume nodes + percentile
+        # absorption/LP/AD/exhaustion/divergence). Used by bulk reaggregation of large
+        # timeframes (4h/1D) where those are slow and rarely needed. OHLC / delta /
+        # cumulative-delta / VWAP / session resets / imbalances are UNAFFECTED.
+        self.skip_heavy = skip_heavy
 
         self.cum_delta: float = 0.0
         self._volumes: deque[float] = deque(maxlen=history)
@@ -78,10 +84,12 @@ class OrderFlowEngine:
             candle, cfg.stacked_imbalance_count
         )
 
-        # --- volume nodes within the candle (per price row, cheap) ---
-        self._volume_nodes(candle)
+        # --- volume nodes within the candle (per price row) ---
+        # skipped in skip_heavy mode (numpy over every cell is the main large-TF cost)
+        if not self.skip_heavy:
+            self._volume_nodes(candle)
 
-        if not light:
+        if not light and not self.skip_heavy:
             self._heavy_detectors(candle)
 
         # --- commit: advance running state once the candle is final ---
