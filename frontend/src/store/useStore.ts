@@ -283,6 +283,46 @@ function persistLayout(layout: DashboardLayout): void {
   }
 }
 
+// ----------------------------------------------- footprint settings (persisted)
+// Same manual pattern: a saved partial is merged OVER DEFAULT_SETTINGS with defensive
+// per-key validation (numbers must be finite, booleans must be booleans, unknown keys
+// ignored), so user toggles (VWAP / SD bands / badges / fills...) survive a reload.
+const SETTINGS_LS_KEY = "vikings.settings.v1";
+const SETTINGS_NUMERIC_KEYS: ReadonlyArray<keyof FootprintSettings> = [
+  "tickMultiplier",
+  "imbalanceRatio",
+  "imbalanceMinVolume",
+];
+function loadPersistedSettings(): FootprintSettings {
+  try {
+    const raw = localStorage.getItem(SETTINGS_LS_KEY);
+    if (raw) {
+      const p = JSON.parse(raw) as Record<string, unknown>;
+      const out = { ...DEFAULT_SETTINGS };
+      const sink = out as Record<string, number | boolean>;
+      (Object.keys(DEFAULT_SETTINGS) as (keyof FootprintSettings)[]).forEach((k) => {
+        const v = p[k];
+        if (SETTINGS_NUMERIC_KEYS.includes(k)) {
+          if (typeof v === "number" && Number.isFinite(v)) sink[k] = v;
+        } else if (typeof v === "boolean") {
+          sink[k] = v;
+        }
+      });
+      return out;
+    }
+  } catch {
+    /* fall through to clean defaults on any parse/storage error */
+  }
+  return { ...DEFAULT_SETTINGS };
+}
+function persistSettings(settings: FootprintSettings): void {
+  try {
+    localStorage.setItem(SETTINGS_LS_KEY, JSON.stringify(settings));
+  } catch {
+    /* ignore quota / unavailable storage */
+  }
+}
+
 // debounced + race-guarded recompute (declared before the store; called at runtime
 // after `useStore` exists, so the forward reference is safe)
 let recomputeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -354,6 +394,7 @@ interface State {
   setChartDisplayMode: (m: "footprint" | "candle") => void;
   toggleTheme: () => void;
   setSettings: (patch: Partial<FootprintSettings>) => void;
+  resetSettings: () => void;
   setBlockSizeModalOpen: (open: boolean) => void;
   ingest: (msg: ServerMessage) => void;
   loadSnapshot: (symbol: string, timeframe: string, candles: FootprintCandle[]) => void;
@@ -405,6 +446,7 @@ const persistedIndicators = loadPersistedIndicators();
 const persistedDrawings = loadPersistedDrawings();
 const persistedWindows = loadPersistedWindows();
 const persistedLayout = loadPersistedLayout();
+const persistedSettings = loadPersistedSettings();
 
 export const useStore = create<State>((set, get) => ({
   // dashboard defaults (no persistence for these yet -> these are the fresh-open values)
@@ -422,7 +464,7 @@ export const useStore = create<State>((set, get) => ({
   consolidation: 1,
   chartDisplayMode: "candle",
   theme: "light",
-  settings: DEFAULT_SETTINGS,
+  settings: persistedSettings,
   blockSizeModalOpen: false,
   positions: [],
   orders: [],
@@ -478,7 +520,16 @@ export const useStore = create<State>((set, get) => ({
     get().loadLiveSnapshot();
   },
   toggleTheme: () => set({ theme: get().theme === "dark" ? "light" : "dark" }),
-  setSettings: (patch) => set({ settings: { ...get().settings, ...patch } }),
+  setSettings: (patch) => {
+    const settings = { ...get().settings, ...patch };
+    set({ settings });
+    persistSettings(settings);
+  },
+  resetSettings: () => {
+    const settings = { ...DEFAULT_SETTINGS };
+    set({ settings });
+    persistSettings(settings);
+  },
   setBlockSizeModalOpen: (open) => set({ blockSizeModalOpen: open }),
 
   // resizable dashboard layout: clamp each provided dimension + persist

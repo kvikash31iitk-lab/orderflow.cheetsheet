@@ -15,6 +15,7 @@ const TOGGLES: { key: keyof FootprintSettings; label: string }[] = [
 export default function SettingsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const settings = useStore((s) => s.settings);
   const setSettings = useStore((s) => s.setSettings);
+  const resetSettings = useStore((s) => s.resetSettings);
 
   return (
     <FloatingWindow
@@ -91,6 +92,16 @@ export default function SettingsModal({ open, onClose }: { open: boolean; onClos
             {t.label}
           </label>
         ))}
+      </div>
+
+      <div className="mt-3 flex justify-end border-t border-terminal-border pt-2">
+        <button
+          onClick={() => resetSettings()}
+          title="Reset all footprint settings to defaults"
+          className="rounded border border-terminal-border px-2 py-1 text-[11px] text-terminal-muted hover:bg-terminal-border hover:text-terminal-text"
+        >
+          Reset to defaults
+        </button>
       </div>
     </FloatingWindow>
   );
