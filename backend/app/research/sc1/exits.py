@@ -54,11 +54,19 @@ def _session_key(t_ms: float) -> str:
 
 
 def resolve_entry(end_time: int, next_open: Optional[float], signal_close: float,
-                  tick_ts: list[int], tick_px: list[float]) -> tuple[float, int, str]:
-    """First tick at/after the signal bar's close; else next bar open; else signal close."""
+                  tick_ts: list[int], tick_px: list[float],
+                  max_lag_ms: Optional[int] = None) -> tuple[float, int, str]:
+    """First tick at/after the signal bar's close; else next bar open; else signal close.
+
+    The first-tick fill is only accepted when it lands within `max_lag_ms` of the close
+    (typically one bar's duration). Without that guard, a signal that closes just before a
+    gap in the tick stream would be filled at the FIRST tick AFTER the gap — minutes/days
+    later at a wildly different price — fabricating a huge bogus move. Beyond the lag we
+    fall back to the next bar's open (always close to the real fill on a continuous feed).
+    """
     if tick_ts:
         pos = bisect.bisect_left(tick_ts, end_time)
-        if pos < len(tick_ts):
+        if pos < len(tick_ts) and (max_lag_ms is None or (tick_ts[pos] - end_time) <= max_lag_ms):
             return float(tick_px[pos]), int(tick_ts[pos]), "tick"
     if next_open is not None:
         return float(next_open), int(end_time), "next_open"
@@ -80,16 +88,27 @@ def _excursions(side: str, entry: float, path: list[dict], upto_idx: int) -> tup
     return mae, mfe
 
 
-def _forward_path(candles: list[dict], entry_bar: int, max_bars: int, entry_session: str) -> list[dict]:
-    """Bars strictly AFTER the signal bar, capped at max_bars and the session boundary."""
+# why a forward path ended -> the honest fallback exit reason when no model exit fired
+_END_REASON = {"session": "session_end", "dataend": "data_end", "maxhold": "timeout"}
+
+
+def _forward_path(candles: list[dict], entry_bar: int, max_bars: int, entry_session: str) -> tuple[list[dict], str]:
+    """Bars strictly AFTER the signal bar, capped at max_bars and the session boundary.
+
+    Returns (path, end_reason) where end_reason is 'session' (hit a new session),
+    'dataend' (ran past the last stored candle — the trade is RIGHT-CENSORED, not a real
+    exit) or 'maxhold' (hit the bar cap). Censored trades must be labelled honestly so the
+    stats aren't biased by treating an unfinished trade as a completed one."""
     out: list[dict] = []
     n = len(candles)
-    for j in range(entry_bar + 1, min(entry_bar + 1 + max_bars, n)):
+    hard = entry_bar + 1 + max_bars
+    end = min(hard, n)
+    for j in range(entry_bar + 1, end):
         c = candles[j]
         if _session_key(c["startTime"]) != entry_session:
-            break
+            return out, "session"
         out.append(c)
-    return out
+    return out, ("maxhold" if hard <= n else "dataend")
 
 
 def _finish(cand, side, entry, entry_time, entry_src, model, signal_time, exit_px, exit_time,
@@ -114,7 +133,8 @@ def evaluate_candidate(cand: dict, candles: list[dict], entry: float, entry_time
     i = cand["barIndex"]
     risk = max(cfg.stop_r * float(cand.get("atr") or 0.0), 1e-9)
     entry_session = _session_key(candles[i]["startTime"])
-    path = _forward_path(candles, i, cfg.max_hold_bars, entry_session)
+    path, end_reason = _forward_path(candles, i, cfg.max_hold_bars, entry_session)
+    fallback_reason = _END_REASON[end_reason]   # honest label for an unfinished trade
     out: list[TradeOutcome] = []
     sig_t = cand["startTime"]
 
@@ -145,39 +165,41 @@ def evaluate_candidate(cand: dict, candles: list[dict], entry: float, entry_time
                 out.append(fin(f"fixed_{k:g}R", tp, idx, "tp")); done = True; break
         if not done:
             last = len(path) - 1
-            reason = "session_end" if len(path) < cfg.max_hold_bars else "timeout"
-            out.append(fin(f"fixed_{k:g}R", path[last]["close"], last, reason))
+            out.append(fin(f"fixed_{k:g}R", path[last]["close"], last, fallback_reason))
 
     # ---- trailing stop (engages after +activate R) ----
+    # NO intrabar lookahead: each bar is first tested against the stop carried from PRIOR
+    # bars, THEN this bar's extreme arms/ratchets the stop for subsequent bars. (Testing
+    # against a stop ratcheted by the same bar's own high/low would assume the high printed
+    # before the low and overstate trailing performance.)
     stop = entry - risk if side == "long" else entry + risk
     armed = False
     extreme = entry
     trail_done = False
     for idx, c in enumerate(path):
         if side == "long":
+            if c["low"] <= stop:
+                out.append(fin("trailing", stop, idx, "trail" if armed else "sl")); trail_done = True; break
             extreme = max(extreme, c["high"])
             if not armed and (c["high"] - entry) >= cfg.trail_activate_r * risk:
                 armed = True
             if armed:
                 stop = max(stop, extreme - cfg.trail_atr_mult * risk)
-            if c["low"] <= stop:
-                out.append(fin("trailing", stop, idx, "trail" if armed else "sl")); trail_done = True; break
         else:
+            if c["high"] >= stop:
+                out.append(fin("trailing", stop, idx, "trail" if armed else "sl")); trail_done = True; break
             extreme = min(extreme, c["low"])
             if not armed and (entry - c["low"]) >= cfg.trail_activate_r * risk:
                 armed = True
             if armed:
                 stop = min(stop, extreme + cfg.trail_atr_mult * risk)
-            if c["high"] >= stop:
-                out.append(fin("trailing", stop, idx, "trail" if armed else "sl")); trail_done = True; break
     if not trail_done:
         last = len(path) - 1
-        reason = "session_end" if len(path) < cfg.max_hold_bars else "timeout"
-        out.append(fin("trailing", path[last]["close"], last, reason))
+        out.append(fin("trailing", path[last]["close"], last, fallback_reason))
 
     # ---- time exit ----
     t_idx = min(cfg.time_exit_bars - 1, len(path) - 1)
-    t_reason = "time" if (cfg.time_exit_bars - 1) <= (len(path) - 1) else "session_end"
+    t_reason = "time" if (cfg.time_exit_bars - 1) <= (len(path) - 1) else fallback_reason
     out.append(fin("time", path[t_idx]["close"], t_idx, t_reason))
 
     # ---- opposite-signal exit ----
@@ -190,7 +212,6 @@ def evaluate_candidate(cand: dict, candles: list[dict], entry: float, entry_time
         out.append(fin("opposite", path[opp_idx]["close"], opp_idx, "opposite"))
     else:
         last = len(path) - 1
-        reason = "session_end" if len(path) < cfg.max_hold_bars else "timeout"
-        out.append(fin("opposite", path[last]["close"], last, reason))
+        out.append(fin("opposite", path[last]["close"], last, fallback_reason))
 
     return out

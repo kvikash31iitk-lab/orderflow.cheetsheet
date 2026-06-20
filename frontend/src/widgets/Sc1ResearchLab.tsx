@@ -72,8 +72,13 @@ export default function Sc1ResearchLab() {
   const [busySweep, setBusySweep] = useState(false);
   const [error, setError] = useState("");
 
+  const refreshCoverage = useCallback(() => {
+    api.sc1Coverage(symbol).then(setCoverage).catch(() => setCoverage(null));
+  }, [symbol]);
+
   const runAnalysis = useCallback(async () => {
     setBusy(true); setError(""); setSelected(null); setSweep(null);
+    refreshCoverage();  // also refresh coverage so a stuck/failed load can be retried
     try {
       const rep = await api.sc1Run({ symbol, timeframe, use5s });
       setRun(rep);
@@ -87,10 +92,10 @@ export default function Sc1ResearchLab() {
     } finally {
       setBusy(false);
     }
-  }, [symbol, timeframe, use5s]);
+  }, [symbol, timeframe, use5s, refreshCoverage]);
 
   // coverage on mount / symbol change; auto-run once on mount
-  useEffect(() => { api.sc1Coverage(symbol).then(setCoverage).catch(() => setCoverage(null)); }, [symbol]);
+  useEffect(() => { refreshCoverage(); }, [refreshCoverage]);
   useEffect(() => { void runAnalysis(); /* eslint-disable-next-line */ }, []);
 
   const runSweep = useCallback(async () => {

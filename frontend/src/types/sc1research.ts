@@ -43,6 +43,10 @@ export interface Sc1Candidate {
   hammer: boolean;
   invHammer: boolean;
   shootingStar: boolean;
+  // resolved no-lookahead entry (precomputed server-side)
+  entry?: number;
+  entryTime?: number;
+  entrySource?: "tick" | "next_open" | "signal_close";
   // attribution
   components: Record<Sc1ComponentKey, number>;
   weights: Record<Sc1ComponentKey, number>;

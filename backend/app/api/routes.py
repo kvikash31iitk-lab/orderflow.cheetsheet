@@ -271,7 +271,9 @@ async def sc1_run(req: Request, body: Sc1Run) -> dict:
 
 @router.post("/research/sc1/compare-exits")
 async def sc1_compare_exits(body: Sc1CompareExits) -> dict:
-    return sc1_service.compare_exits(body.runId, _exit_config(body.exit), body.classes)
+    # CPU-bound over ~thousands of trades -> off the event loop (keeps the live feed responsive)
+    import asyncio
+    return await asyncio.to_thread(sc1_service.compare_exits, body.runId, _exit_config(body.exit), body.classes)
 
 
 @router.post("/research/sc1/sweep")

@@ -50,6 +50,19 @@ def test_entry_falls_back_to_next_open_then_close():
     assert src2 == "signal_close" and px2 == 100.0
 
 
+def test_entry_rejects_tick_far_past_a_data_gap():
+    # the only tick is DAYS after the signal close (a gap in tick data). Without the lag
+    # guard this fabricated a huge bogus fill; now it must fall back to next_open.
+    far = 180000 + 5 * 24 * 3600 * 1000
+    px, ts, src = resolve_entry(180000, next_open=101.0, signal_close=100.0,
+                                tick_ts=[far], tick_px=[4278.7], max_lag_ms=180000)
+    assert src == "next_open" and px == 101.0
+    # a tick within the lag window IS accepted
+    px2, ts2, src2 = resolve_entry(180000, next_open=101.0, signal_close=100.0,
+                                   tick_ts=[180050], tick_px=[100.5], max_lag_ms=180000)
+    assert src2 == "tick" and px2 == 100.5
+
+
 # ------------------------------------------------------------------- long exits
 def test_long_tp_2r_and_excursions():
     candles = _signal_plus([(100.6, 99.9, 100.4), (101.2, 100.3, 101.0), (102.3, 101.0, 102.1)])
@@ -210,8 +223,8 @@ class _FakePg:
     async def recent_footprints(self, symbol, timeframe, limit, row_size=None):
         return [dict(c) for c in self.candles][-limit:]
 
-    async def ticks_range(self, symbol, start_ms, end_ms, limit=500_000):
-        return [t for t in self.ticks if start_ms <= t["ts"] <= end_ms][:limit]
+    async def recent_ticks(self, symbol, since_ms, limit=1_500_000):
+        return [t for t in self.ticks if t["ts"] >= since_ms][-limit:]
 
 
 async def test_service_coverage_run_compare_sweep_end_to_end():

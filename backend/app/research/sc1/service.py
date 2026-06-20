@@ -8,6 +8,7 @@ API is designed so durable persistence can be layered on later.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from collections import OrderedDict
 from datetime import datetime, timezone
@@ -21,12 +22,16 @@ from .config import ExitConfig, Sc1Config
 from .engine import run_engine
 from .exits import TradeOutcome, evaluate_candidate, resolve_entry
 
-# bound how much we reconstruct per run (dev/research, not the prod hot path)
+# Bound how much we reconstruct per run. This runs on the SINGLE live backend worker, so
+# the tick fetch is a transient memory spike that must stay modest; we fetch the MOST
+# RECENT window (matching the live 5S endpoint) rather than the oldest, and never retain
+# the raw tick arrays past the run (see _run_compute — only the resolved per-candidate
+# entries are cached, not the millions of ticks).
 MAX_RESEARCH_BARS = 12000
-MAX_RESEARCH_TICKS = 2_000_000
+MAX_RESEARCH_TICKS = 700_000
 
 _RUN_CACHE: "OrderedDict[str, dict]" = OrderedDict()
-_CACHE_MAX = 6
+_CACHE_MAX = 3
 
 
 def _cache_put(run_id: str, payload: dict) -> None:
@@ -76,8 +81,9 @@ async def _load(pg, symbol: str, timeframe: str, start_ms: Optional[int], end_ms
     used_5s_window = False
     if rows:
         win_lo = rows[0]["startTime"]
-        win_hi = rows[-1]["endTime"] + 5 * 60_000  # a little past the last bar for entry ticks
-        ticks = await pg.ticks_range(symbol, win_lo, win_hi, limit=MAX_RESEARCH_TICKS)
+        # most-recent ticks in the window (bounded) — matches the live 5S reconstruction,
+        # which also serves the recent window. Older signals fall back to next-bar-open entry.
+        ticks = await pg.recent_ticks(symbol, win_lo, limit=MAX_RESEARCH_TICKS)
         if ticks:
             tick_ts = [int(t["ts"]) for t in ticks]
             tick_px = [float(t["price"]) for t in ticks]
@@ -90,16 +96,16 @@ async def _load(pg, symbol: str, timeframe: str, start_ms: Optional[int], end_ms
 
 
 # ------------------------------------------------------------------------- run
-async def run(pg, symbol: str, timeframe: str, start_ms: Optional[int], end_ms: Optional[int],
-              cfg: Sc1Config, use_5s: bool = True) -> dict:
-    symbol = symbol.upper()
-    rows, five_s, tick_ts, tick_px, used_5s_window = await _load(pg, symbol, timeframe, start_ms, end_ms, use_5s)
-    if not rows:
-        return {"ok": False, "error": "no candles in range", "candidates": []}
+# run_engine / _eval_all / the sweep loop are CPU-bound pure-Python and run for ~1s
+# (run) to tens of seconds (sweep). The backend is a SINGLE worker that also serves the
+# live order-flow terminal, so this compute is dispatched to a worker thread via
+# asyncio.to_thread — it must never execute inline on the event loop.
+def _run_compute(rows: list[dict], five_s, tick_ts, tick_px, cfg: Sc1Config,
+                 symbol: str, timeframe: str, use_5s: bool, used_5s_window: bool) -> dict:
     res = run_engine(rows, cfg, five_s)
     cands = res["candidates"]
+    _resolve_entries(rows, cands, tick_ts, tick_px)   # stash entries; ticks not retained
 
-    # inventory counts
     inv = {"baseline": {"long": 0, "short": 0}, "blocked_by_candle": {"long": 0, "short": 0}, "near_miss": {"long": 0, "short": 0}}
     by_day: dict[str, dict] = {}
     for c in cands:
@@ -109,8 +115,8 @@ async def run(pg, symbol: str, timeframe: str, start_ms: Optional[int], end_ms: 
         d[c["klass"]] += 1
 
     run_id = hashlib.sha1(f"{symbol}:{timeframe}:{rows[0]['startTime']}:{rows[-1]['startTime']}:{cfg.config_hash()}:{use_5s}".encode()).hexdigest()[:12]
-    _cache_put(run_id, {"symbol": symbol, "timeframe": timeframe, "candles": rows, "candidates": cands,
-                        "tick_ts": tick_ts, "tick_px": tick_px, "cfg": cfg})
+    # cache ONLY candles + candidates (with their resolved entries) — never the tick arrays
+    _cache_put(run_id, {"symbol": symbol, "timeframe": timeframe, "candles": rows, "candidates": cands, "cfg": cfg})
     return {
         "ok": True, "runId": run_id, "symbol": symbol, "timeframe": timeframe,
         "configHash": cfg.config_hash(), "config": cfg.to_dict(),
@@ -119,6 +125,16 @@ async def run(pg, symbol: str, timeframe: str, start_ms: Optional[int], end_ms: 
         "inventory": inv, "byDay": by_day,
         "candidates": cands,
     }
+
+
+async def run(pg, symbol: str, timeframe: str, start_ms: Optional[int], end_ms: Optional[int],
+              cfg: Sc1Config, use_5s: bool = True) -> dict:
+    symbol = symbol.upper()
+    rows, five_s, tick_ts, tick_px, used_5s_window = await _load(pg, symbol, timeframe, start_ms, end_ms, use_5s)
+    if not rows:
+        return {"ok": False, "error": "no candles in range", "candidates": []}
+    return await asyncio.to_thread(_run_compute, rows, five_s, tick_ts, tick_px, cfg,
+                                   symbol, timeframe, use_5s, used_5s_window)
 
 
 # ------------------------------------------------------------- exit comparison
@@ -162,17 +178,29 @@ def _opposite_times(candidates: list[dict]) -> dict:
     return {"long": short_sig, "short": long_sig}
 
 
-def _eval_all(candles, candidates, tick_ts, tick_px, exit_cfg, classes) -> list[TradeOutcome]:
+def _resolve_entries(candles, candidates, tick_ts, tick_px) -> None:
+    """Resolve each candidate's no-lookahead entry ONCE and stash it on the candidate dict
+    (entry/entryTime/entrySource). This lets compare-exits/drilldown reuse the cached run
+    WITHOUT retaining the millions of ticks (the cache would otherwise carry up to 700k
+    floats x2 per run -> hundreds of MB on the single live worker)."""
+    n = len(candles)
+    for cand in candidates:
+        i = cand["barIndex"]
+        nxt = candles[i + 1]["open"] if i + 1 < n else None
+        bar_ms = max(1, int(cand["endTime"]) - int(cand["startTime"]))  # entry tick within ~one bar
+        entry, et, src = resolve_entry(cand["endTime"], nxt, cand["close"], tick_ts, tick_px, max_lag_ms=bar_ms)
+        cand["entry"], cand["entryTime"], cand["entrySource"] = entry, et, src
+
+
+def _eval_all(candles, candidates, exit_cfg, classes) -> list[TradeOutcome]:
+    """Score candidates whose entries were already resolved by _resolve_entries."""
     opp = _opposite_times(candidates)
-    by_start = {c["startTime"]: i for i, c in enumerate(candles)}
     outs: list[TradeOutcome] = []
     for cand in candidates:
         if classes and cand["klass"] not in classes:
             continue
-        i = cand["barIndex"]
-        nxt = candles[i + 1]["open"] if i + 1 < len(candles) else None
-        entry, et, src = resolve_entry(cand["endTime"], nxt, cand["close"], tick_ts, tick_px)
-        outs.extend(evaluate_candidate(cand, candles, entry, et, src, opp[cand["side"]], exit_cfg))
+        outs.extend(evaluate_candidate(cand, candles, cand["entry"], cand["entryTime"],
+                                       cand["entrySource"], opp[cand["side"]], exit_cfg))
     return outs
 
 
@@ -180,7 +208,7 @@ def compare_exits(run_id: str, exit_cfg: ExitConfig, classes: Optional[list[str]
     run = _RUN_CACHE.get(run_id)
     if not run:
         return {"ok": False, "error": "run not found (re-run /research/sc1/run)", "matrix": []}
-    outs = _eval_all(run["candles"], run["candidates"], run["tick_ts"], run["tick_px"], exit_cfg, classes)
+    outs = _eval_all(run["candles"], run["candidates"], exit_cfg, classes)
     models = sorted({o.exit_model for o in outs})
     klasses = ["baseline", "blocked_by_candle", "near_miss"]
     matrix = []
@@ -199,25 +227,25 @@ def compare_exits(run_id: str, exit_cfg: ExitConfig, classes: Optional[list[str]
 
 
 # ----------------------------------------------------------------------- sweep
-async def sweep(pg, symbol: str, timeframe: str, start_ms, end_ms, base_cfg: Sc1Config,
-                grid: dict[str, list], exit_cfg: ExitConfig, exit_model: str = "fixed_2R",
-                use_5s: bool = True, min_sample: int = 12) -> dict:
-    symbol = symbol.upper()
-    rows, five_s, tick_ts, tick_px, _ = await _load(pg, symbol, timeframe, start_ms, end_ms, use_5s)
-    if not rows:
-        return {"ok": False, "error": "no candles in range", "leaderboard": []}
+MAX_SWEEP_COMBOS = 40  # bounded/auditable; matches the frontend's max grid and caps sweep wall-time
+
+
+def _sweep_compute(rows, five_s, tick_ts, tick_px, base_cfg: Sc1Config, grid: dict[str, list],
+                   exit_cfg: ExitConfig, exit_model: str, symbol: str, timeframe: str, min_sample: int) -> dict:
     keys = [k for k in grid if hasattr(base_cfg, k)]
     combos: list[dict] = [{}]
     for k in keys:
         combos = [{**c, k: v} for c in combos for v in grid[k]]
-    combos = combos[:80]  # bounded / auditable
+    truncated = len(combos) > MAX_SWEEP_COMBOS
+    combos = combos[:MAX_SWEEP_COMBOS]
 
     base_hash = base_cfg.config_hash()
     rows_lb = []
     for combo in combos:
         cfg = base_cfg.clone(**combo)
         res = run_engine(rows, cfg, five_s)
-        outs = _eval_all(rows, res["candidates"], tick_ts, tick_px, exit_cfg, ["baseline"])
+        _resolve_entries(rows, res["candidates"], tick_ts, tick_px)
+        outs = _eval_all(rows, res["candidates"], exit_cfg, ["baseline"])
         outs = [o for o in outs if o.exit_model == exit_model]
         summ = _summarize(outs)
         # objective: expectancy R, penalised for thin samples
@@ -234,6 +262,19 @@ async def sweep(pg, symbol: str, timeframe: str, start_ms, end_ms, base_cfg: Sc1
             "objective": objective, **summ, "warnings": warnings,
         })
     rows_lb.sort(key=lambda r: r["objective"], reverse=True)
+    note = "Bounded grid on ~recent data — validation harness only; confirm on 5-year GC before adopting."
+    if truncated:
+        note += f" Grid truncated to the first {MAX_SWEEP_COMBOS} combos."
     return {"ok": True, "symbol": symbol, "timeframe": timeframe, "exitModel": exit_model,
-            "baselineHash": base_hash, "leaderboard": rows_lb,
-            "note": "Bounded grid on ~recent data — validation harness only; confirm on 5-year GC before adopting."}
+            "baselineHash": base_hash, "leaderboard": rows_lb, "note": note}
+
+
+async def sweep(pg, symbol: str, timeframe: str, start_ms, end_ms, base_cfg: Sc1Config,
+                grid: dict[str, list], exit_cfg: ExitConfig, exit_model: str = "fixed_2R",
+                use_5s: bool = True, min_sample: int = 12) -> dict:
+    symbol = symbol.upper()
+    rows, five_s, tick_ts, tick_px, _ = await _load(pg, symbol, timeframe, start_ms, end_ms, use_5s)
+    if not rows:
+        return {"ok": False, "error": "no candles in range", "leaderboard": []}
+    return await asyncio.to_thread(_sweep_compute, rows, five_s, tick_ts, tick_px, base_cfg,
+                                   grid, exit_cfg, exit_model, symbol, timeframe, min_sample)
