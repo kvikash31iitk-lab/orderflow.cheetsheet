@@ -6,7 +6,11 @@ import type { FootprintCandle } from "../types/orderflow";
 // ---- hard limits (shared by runners + the worker) ----
 export const MAX_CANDLES = 15000;
 export const MAX_OUTPUTS = 20000;
-export const MAX_SCRIPT_LENGTH = 50000;
+// Raised from 50000 to fit faithful, user-readable ports of large TradingView Pine
+// indicators (e.g. "SC1 1604 V3 Pine Parity" ~70k chars; the Pine source is ~87k).
+// This is an anti-abuse guard, not a transport limit -- scripts live in localStorage
+// and cross to the worker via structured clone, both of which handle 100k+ strings.
+export const MAX_SCRIPT_LENGTH = 200000;
 // Per-run sandbox budget for WARM runs. The indicator window now matches the deep
 // candle-mode chart history (15k), so this allows legitimate institutional scripts
 // to process full history while still bounding runaway/infinite loops.

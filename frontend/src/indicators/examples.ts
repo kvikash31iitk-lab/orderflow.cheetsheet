@@ -1,5 +1,6 @@
 import { SC1_1604_SCRIPT } from "./sc1_1604";
 import { SC1_1604_V2_SCRIPT } from "./sc1_1604_v2";
+import { SC1_1604_V3_SCRIPT } from "./sc1_1604_v3";
 
 // Built-in example indicator scripts. These are plain text the user can read/edit in
 // the Indicators panel. They exercise both authoring styles: per-candle (onCandle +
@@ -149,4 +150,5 @@ export const EXAMPLES: IndicatorExample[] = [
   { name: "Anchored VWAP", script: ANCHORED_VWAP_SCRIPT },
   { name: "SC1 1604 Replica", script: SC1_1604_SCRIPT },
   { name: "SC1 1604 V2", script: SC1_1604_V2_SCRIPT },
+  { name: "SC1 1604 V3 Pine Parity", script: SC1_1604_V3_SCRIPT },
 ];
