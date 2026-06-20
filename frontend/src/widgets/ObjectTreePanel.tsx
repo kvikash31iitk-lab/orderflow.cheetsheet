@@ -3,9 +3,10 @@
 // selectable, hideable, lockable and DELETABLE here. Drawings are scoped to the
 // active symbol (they only render on the symbol they were drawn on).
 import type { ReactNode } from "react";
+import { Anchor, Eye, EyeOff, Lock, LockOpen, X } from "lucide-react";
 import { useStore } from "../store/useStore";
 import FloatingWindow from "../components/FloatingWindow";
-import { toolDef } from "../drawings/types";
+import { TOOL_ICONS, VERTICAL_ROTATE } from "../drawings/toolIcons";
 import { formatIstDateTime } from "../lib/time";
 
 function Section({ title, extra, children }: { title: string; extra?: ReactNode; children: ReactNode }) {
@@ -64,6 +65,8 @@ export default function ObjectTreePanel({ open, onClose }: { open: boolean; onCl
   const indicators = useStore((s) => s.indicators);
   const toggleIndicator = useStore((s) => s.toggleIndicator);
   const removeIndicator = useStore((s) => s.removeIndicator);
+  const selectedIndicatorId = useStore((s) => s.selectedIndicatorId);
+  const selectIndicator = useStore((s) => s.selectIndicator);
 
   const symDrawings = drawings.filter((d) => d.symbol === symbol);
 
@@ -93,56 +96,71 @@ export default function ObjectTreePanel({ open, onClose }: { open: boolean; onCl
           }
         >
           {symDrawings.length === 0 && <Empty>No drawings yet — pick a tool from the left toolbar.</Empty>}
-          {symDrawings.map((d) => (
-            <div
-              key={d.id}
-              onClick={() => {
-                selectDrawing(d.id);
-                setActiveTool("select");
-              }}
-              className={`flex cursor-pointer items-center gap-2 px-3 py-1.5 ${
-                d.id === selectedId ? "bg-flow-delta/15" : "hover:bg-terminal-border/50"
-              }`}
-            >
-              <span className="w-4 shrink-0 text-center text-terminal-muted">{toolDef(d.type)?.glyph}</span>
-              <span className={`flex-1 truncate ${d.visible ? "" : "text-terminal-muted line-through"}`} style={{ color: d.visible ? d.style.color : undefined }}>
-                {d.name}
-              </span>
-              <IconBtn title={d.visible ? "Hide" : "Show"} onClick={() => toggleVisible(d.id)}>
-                {d.visible ? "◉" : "○"}
-              </IconBtn>
-              <IconBtn title={d.locked ? "Unlock" : "Lock"} onClick={() => toggleLock(d.id)}>
-                {d.locked ? "🔒" : "🔓"}
-              </IconBtn>
-              <IconBtn title="Remove" onClick={() => removeDrawing(d.id)} danger>
-                ×
-              </IconBtn>
-            </div>
-          ))}
+          {symDrawings.map((d) => {
+            const TypeIcon = TOOL_ICONS[d.type];
+            return (
+              <div
+                key={d.id}
+                onClick={() => {
+                  selectDrawing(d.id);
+                  setActiveTool("select");
+                }}
+                className={`flex cursor-pointer items-center gap-2 px-3 py-1.5 ${
+                  d.id === selectedId ? "bg-flow-delta/15" : "hover:bg-terminal-border/50"
+                }`}
+              >
+                <span className="flex w-4 shrink-0 justify-center text-terminal-muted">
+                  {TypeIcon && <TypeIcon size={13} className={VERTICAL_ROTATE[d.type] ? "rotate-90" : undefined} />}
+                </span>
+                <span className={`flex-1 truncate ${d.visible ? "" : "text-terminal-muted line-through"}`} style={{ color: d.visible ? d.style.color : undefined }}>
+                  {d.name}
+                </span>
+                <IconBtn title={d.visible ? "Hide" : "Show"} onClick={() => toggleVisible(d.id)}>
+                  {d.visible ? <Eye size={13} /> : <EyeOff size={13} />}
+                </IconBtn>
+                <IconBtn title={d.locked ? "Unlock" : "Lock"} onClick={() => toggleLock(d.id)}>
+                  {d.locked ? <Lock size={13} /> : <LockOpen size={13} />}
+                </IconBtn>
+                <IconBtn title="Remove" onClick={() => removeDrawing(d.id)} danger>
+                  <X size={13} />
+                </IconBtn>
+              </div>
+            );
+          })}
         </Section>
 
         <Section title="Indicators">
           {indicators.length === 0 && <Empty>No indicators.</Empty>}
           {indicators.map((i) => {
-            const anchorMs = i.kind === "anchored-vwap" ? Number(i.inputs.anchorTime ?? 0) : 0;
+            const isAvwap = i.kind === "anchored-vwap";
+            const anchorMs = isAvwap ? Number(i.inputs.anchorTime ?? 0) : 0;
             return (
-              <div key={i.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-terminal-border/50">
+              <div
+                key={i.id}
+                onClick={isAvwap ? () => selectIndicator(i.id) : undefined}
+                className={`flex items-center gap-2 px-3 py-1.5 ${isAvwap ? "cursor-pointer" : ""} ${
+                  i.id === selectedIndicatorId ? "bg-flow-exhaustion/15" : "hover:bg-terminal-border/50"
+                }`}
+              >
                 <input
                   type="checkbox"
                   checked={i.enabled}
                   onChange={() => toggleIndicator(i.id)}
+                  onClick={(e) => e.stopPropagation()}
                   className="accent-flow-delta"
                   title={i.enabled ? "Disable" : "Enable"}
                 />
                 <div className="min-w-0 flex-1">
                   <div className="truncate">{i.name}</div>
                   {anchorMs > 0 && (
-                    <div className="truncate text-[9px] text-terminal-muted">⚓ {formatIstDateTime(anchorMs)} IST</div>
+                    <div className="flex items-center gap-1 truncate text-[9px] text-terminal-muted">
+                      <Anchor size={9} /> {formatIstDateTime(anchorMs)} IST
+                    </div>
                   )}
                 </div>
                 <span className="text-[9px] text-terminal-muted">{i.overlay ? "overlay" : "pane"}</span>
                 <IconBtn title="Remove" onClick={() => removeIndicator(i.id)} danger>
-                  ×
+                  <X size={13} />
                 </IconBtn>
               </div>
             );

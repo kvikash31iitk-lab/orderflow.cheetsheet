@@ -26,10 +26,18 @@ import { drawingHandles, type Px } from "./geometry";
 type ChartApi = SeriesAttachedParameter<Time>["chart"];
 type SeriesApi = SeriesAttachedParameter<Time>["series"];
 
+// a selected Anchored VWAP highlighted on the chart: its plotted line points (data
+// coords) so the primitive can stroke a halo + anchor handle on top of it.
+export interface AvwapSelection {
+  points: { time: number; value: number }[];
+  color: string;
+}
+
 export interface DrawingRenderState {
   drawings: DrawingObject[]; // already filtered to current symbol + visible, draft merged in
   selectedId: string | null;
   theme: "dark" | "light";
+  avwapSelection?: AvwapSelection | null;
 }
 
 function dashFor(style: DrawingObject["style"]): number[] {
@@ -56,7 +64,7 @@ class DrawingRenderer implements ISeriesPrimitivePaneRenderer {
     const api = this._apiGetter();
     if (!api) return;
     const state = this._provider();
-    if (!state.drawings.length) return;
+    if (!state.drawings.length && !state.avwapSelection) return;
     target.useMediaCoordinateSpace((scope) => {
       this._draw(scope.context, scope.mediaSize, api.chart, api.series, state);
     });
@@ -94,9 +102,45 @@ class DrawingRenderer implements ISeriesPrimitivePaneRenderer {
       ctx.restore();
     }
 
+    // a selected Anchored VWAP: halo over its line + an anchor handle at point[0]
+    if (state.avwapSelection) this._drawAvwapSelection(ctx, state.avwapSelection, toPx, state.theme);
+
     // selection handles painted last, on top
     const sel = state.drawings.find((d) => d.id === state.selectedId);
     if (sel) this._drawHandles(ctx, sel, toPx, state.theme);
+  }
+
+  private _drawAvwapSelection(
+    ctx: CanvasRenderingContext2D,
+    sel: AvwapSelection,
+    toPx: (pt: { time: number; price: number }) => Px | null,
+    theme: "dark" | "light",
+  ): void {
+    const pts = sel.points
+      .map((p) => toPx({ time: p.time, price: p.value }))
+      .filter((p): p is Px => p != null);
+    if (!pts.length) return;
+    ctx.save();
+    ctx.setLineDash([]);
+    // translucent halo tracing the AVWAP line so the selection reads on the chart
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.lineWidth = 7;
+    ctx.strokeStyle = withAlpha(sel.color, 0.35);
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.stroke();
+    // square anchor handle at the first plotted point
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = theme === "light" ? "#212529" : "#ffffff";
+    ctx.fillStyle = sel.color;
+    const a = pts[0];
+    ctx.beginPath();
+    ctx.rect(a.x - 4, a.y - 4, 8, 8);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
   }
 
   private _drawOne(

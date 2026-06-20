@@ -11,9 +11,11 @@ import {
 import { useStore } from "../store/useStore";
 import { lwcTheme } from "../lib/chartTheme";
 import { registerChart, unregisterChart } from "../lib/chartSync";
+import { Crosshair, Pencil } from "lucide-react";
 import { createDrawingController } from "../drawings/drawingController";
 import { toolDef } from "../drawings/types";
 import DrawingSelectionToolbar from "../widgets/DrawingSelectionToolbar";
+import AvwapSelectionToolbar from "../widgets/AvwapSelectionToolbar";
 import {
   DARK_PALETTE,
   LIGHT_PALETTE,
@@ -203,7 +205,7 @@ export default function FootprintChart() {
 
   return (
     <div className="relative h-full w-full">
-      <div ref={hostRef} className="absolute inset-0" />
+      <div ref={hostRef} data-testid="footprint-chart" className="absolute inset-0" />
       {candles.length === 0 && (
         // loading / empty overlay so a large snapshot (deep history can be slow to
         // fetch) shows progress instead of a blank chart
@@ -214,12 +216,13 @@ export default function FootprintChart() {
         </div>
       )}
       <DrawingSelectionToolbar />
+      <AvwapSelectionToolbar />
       {activeTool !== "select" && (
         // drawing-tool armed: prompt + Esc/Cancel. pointer-events-none wrapper so the
         // chart still receives the drag; only the banner itself is interactive.
         <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center">
           <div className="pointer-events-auto flex items-center gap-2 rounded border border-flow-delta/60 bg-terminal-panel/95 px-3 py-1.5 text-xs text-terminal-text shadow-lg shadow-black/40">
-            <span className="text-flow-delta">✎</span>
+            <Pencil size={13} className="text-flow-delta" />
             <span>{toolDef(activeTool)?.label ?? "Drawing"} — drag on the chart · Esc to cancel</span>
             <button
               onClick={() => setActiveTool("select")}
@@ -235,7 +238,7 @@ export default function FootprintChart() {
         // banner (incl. Cancel) is clickable.
         <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center">
           <div className="pointer-events-auto flex items-center gap-2 rounded border border-flow-exhaustion/60 bg-terminal-panel/95 px-3 py-1.5 text-xs text-terminal-text shadow-lg shadow-black/40">
-            <span className="text-flow-exhaustion">◎</span>
+            <Crosshair size={13} className="text-flow-exhaustion" />
             <span>Click a candle to anchor Anchored VWAP</span>
             <button
               onClick={cancelAnchorPick}

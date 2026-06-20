@@ -29,6 +29,12 @@ frontend/.vite/
 frontend/vite.config.d.ts
 *.tsbuildinfo
 
+# Playwright e2e artifacts
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
+frontend/.playwright/
+
 # Editor / OS
 .idea/
 .vscode/

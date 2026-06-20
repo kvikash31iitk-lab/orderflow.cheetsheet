@@ -23,6 +23,20 @@ export interface ChartPoint {
   price: number;
 }
 
+// Magnet / snap mode for placement: price snaps to the nearest candle feature.
+//   off  = free price (time still snaps to the nearest candle as before)
+//   ohlc = nearest of the candle's open/high/low/close
+//   poc  = the candle's Point of Control (highest-volume price row)
+//   vwap = the candle's session VWAP value
+export type SnapMode = "off" | "ohlc" | "poc" | "vwap";
+
+export const SNAP_MODES: { mode: SnapMode; label: string; title: string }[] = [
+  { mode: "off", label: "Off", title: "Magnet off — free price" },
+  { mode: "ohlc", label: "OHLC", title: "Snap price to the nearest candle open/high/low/close" },
+  { mode: "poc", label: "POC", title: "Snap price to the candle Point of Control" },
+  { mode: "vwap", label: "VWAP", title: "Snap price to the candle session VWAP" },
+];
+
 export type LineStyleName = "solid" | "dashed" | "dotted";
 
 export interface DrawingStyle {

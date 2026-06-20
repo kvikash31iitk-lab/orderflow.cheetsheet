@@ -23,7 +23,7 @@ import type {
 import { runIndicators, disposeSandbox } from "../indicators/engine";
 import { parseIndicatorMeta } from "../indicators/runtime";
 import { DELTA_SPIKE_SCRIPT, ANCHORED_VWAP_SCRIPT } from "../indicators/examples";
-import type { DrawingObject, DrawingTool } from "../drawings/types";
+import type { DrawingObject, DrawingTool, SnapMode } from "../drawings/types";
 import { CHART_CANDLE_LIMIT, snapshotRequestForMode } from "../lib/limits";
 
 // Geometry of a floating workspace window (persisted per window id).
@@ -223,6 +223,17 @@ function persistDrawings(drawings: DrawingObject[]): void {
   }
 }
 
+// Undo/redo history holds snapshots of the `drawings` array ONLY (small immutable
+// objects produced by each action via map/filter/spread, so the reference is safe to
+// retain — no deep copy needed, and never any candle data). Bounded so a long editing
+// session can't grow memory without limit.
+const UNDO_LIMIT = 100;
+function pushHistory(stack: DrawingObject[][], snapshot: DrawingObject[]): DrawingObject[][] {
+  const next = stack.length >= UNDO_LIMIT ? stack.slice(stack.length - UNDO_LIMIT + 1) : stack.slice();
+  next.push(snapshot);
+  return next;
+}
+
 function loadPersistedWindows(): Record<string, WindowRect> {
   try {
     const raw = localStorage.getItem(WINDOWS_LS_KEY);
@@ -379,6 +390,14 @@ interface State {
   drawings: DrawingObject[];
   activeTool: DrawingTool; // "select" = idle cursor; otherwise a placement tool is armed
   selectedDrawingId: string | null;
+  // an Anchored VWAP (indicator) selected on the chart (mutually exclusive with a
+  // selected drawing). null = no indicator selected. Drives the AVWAP selection toolbar.
+  selectedIndicatorId: string | null;
+  // magnet/snap mode for drawing-point placement (price snaps to candle features)
+  snapMode: SnapMode;
+  // undo/redo history of the `drawings` array only (bounded; never holds candle data)
+  undoStack: DrawingObject[][];
+  redoStack: DrawingObject[][];
   windows: Record<string, WindowRect>;
 
   // resizable dashboard panel sizes (persisted)
@@ -422,9 +441,13 @@ interface State {
   updateDrawing: (id: string, patch: Partial<DrawingObject>) => void;
   removeDrawing: (id: string) => void;
   selectDrawing: (id: string | null) => void;
+  selectIndicator: (id: string | null) => void;
   toggleDrawingVisible: (id: string) => void;
   toggleDrawingLock: (id: string) => void;
   clearDrawings: (symbol?: string) => void;
+  setSnapMode: (mode: SnapMode) => void;
+  undo: () => void;
+  redo: () => void;
   // floating-window geometry persistence
   setWindowRect: (id: string, rect: WindowRect) => void;
   // dashboard layout (resizable panels)
@@ -482,6 +505,10 @@ export const useStore = create<State>((set, get) => ({
   drawings: persistedDrawings,
   activeTool: "select",
   selectedDrawingId: null,
+  selectedIndicatorId: null,
+  snapMode: "off",
+  undoStack: [],
+  redoStack: [],
   windows: persistedWindows,
   layout: persistedLayout,
 
@@ -716,6 +743,7 @@ export const useStore = create<State>((set, get) => ({
       indicators,
       indicatorErrors: errs,
       pendingAnchorIndicatorId: cur.pendingAnchorIndicatorId === id ? null : cur.pendingAnchorIndicatorId,
+      selectedIndicatorId: cur.selectedIndicatorId === id ? null : cur.selectedIndicatorId,
     });
     persistIndicators(indicators, cur.indicatorExecutionMode);
     scheduleRecompute(50);
@@ -873,6 +901,7 @@ export const useStore = create<State>((set, get) => ({
       indicators,
       indicatorErrors: errs,
       pendingAnchorIndicatorId: removed.has(cur.pendingAnchorIndicatorId ?? "") ? null : cur.pendingAnchorIndicatorId,
+      selectedIndicatorId: removed.has(cur.selectedIndicatorId ?? "") ? null : cur.selectedIndicatorId,
     });
     persistIndicators(indicators, cur.indicatorExecutionMode);
     scheduleRecompute(50);
@@ -886,48 +915,95 @@ export const useStore = create<State>((set, get) => ({
     set({
       activeTool: tool,
       selectedDrawingId: tool === "select" ? get().selectedDrawingId : null,
+      selectedIndicatorId: null,
       pendingAnchorIndicatorId: null,
       pendingAnchorTool: null,
     }),
   addDrawing: (d) => {
-    const drawings = [...get().drawings, d];
+    const cur = get();
+    const drawings = [...cur.drawings, d];
     // creating one object reverts to the cursor and selects it (TradingView-style)
-    set({ drawings, selectedDrawingId: d.id, activeTool: "select" });
+    set({
+      drawings,
+      selectedDrawingId: d.id,
+      selectedIndicatorId: null,
+      activeTool: "select",
+      undoStack: pushHistory(cur.undoStack, cur.drawings),
+      redoStack: [],
+    });
     persistDrawings(drawings);
   },
   updateDrawing: (id, patch) => {
-    const drawings = get().drawings.map((d) =>
+    const cur = get();
+    const drawings = cur.drawings.map((d) =>
       d.id === id ? { ...d, ...patch, id: d.id, updatedAt: Date.now() } : d,
     );
-    set({ drawings });
+    set({ drawings, undoStack: pushHistory(cur.undoStack, cur.drawings), redoStack: [] });
     persistDrawings(drawings);
   },
   removeDrawing: (id) => {
     const cur = get();
     const drawings = cur.drawings.filter((d) => d.id !== id);
-    set({ drawings, selectedDrawingId: cur.selectedDrawingId === id ? null : cur.selectedDrawingId });
+    set({
+      drawings,
+      selectedDrawingId: cur.selectedDrawingId === id ? null : cur.selectedDrawingId,
+      undoStack: pushHistory(cur.undoStack, cur.drawings),
+      redoStack: [],
+    });
     persistDrawings(drawings);
   },
-  selectDrawing: (id) => set({ selectedDrawingId: id }),
+  // selecting a drawing clears any AVWAP selection (one chart object selected at a time)
+  selectDrawing: (id) => set({ selectedDrawingId: id, selectedIndicatorId: id ? null : get().selectedIndicatorId }),
+  selectIndicator: (id) => set({ selectedIndicatorId: id, selectedDrawingId: id ? null : get().selectedDrawingId }),
   toggleDrawingVisible: (id) => {
-    const drawings = get().drawings.map((d) =>
+    const cur = get();
+    const drawings = cur.drawings.map((d) =>
       d.id === id ? { ...d, visible: !d.visible, updatedAt: Date.now() } : d,
     );
-    set({ drawings });
+    set({ drawings, undoStack: pushHistory(cur.undoStack, cur.drawings), redoStack: [] });
     persistDrawings(drawings);
   },
   toggleDrawingLock: (id) => {
-    const drawings = get().drawings.map((d) =>
+    const cur = get();
+    const drawings = cur.drawings.map((d) =>
       d.id === id ? { ...d, locked: !d.locked, updatedAt: Date.now() } : d,
     );
-    set({ drawings });
+    set({ drawings, undoStack: pushHistory(cur.undoStack, cur.drawings), redoStack: [] });
     persistDrawings(drawings);
   },
   clearDrawings: (symbol) => {
     const cur = get();
     const drawings = symbol ? cur.drawings.filter((d) => d.symbol !== symbol) : [];
-    set({ drawings, selectedDrawingId: null });
+    set({
+      drawings,
+      selectedDrawingId: null,
+      undoStack: pushHistory(cur.undoStack, cur.drawings),
+      redoStack: [],
+    });
     persistDrawings(drawings);
+  },
+  setSnapMode: (mode) => set({ snapMode: mode }),
+  // Undo/redo swap the whole `drawings` array between the two history stacks. Selection
+  // is cleared if it points at a drawing that no longer exists in the restored set.
+  undo: () => {
+    const cur = get();
+    if (cur.undoStack.length === 0) return;
+    const undoStack = cur.undoStack.slice();
+    const prev = undoStack.pop() as DrawingObject[];
+    const redoStack = pushHistory(cur.redoStack, cur.drawings);
+    const stillThere = cur.selectedDrawingId != null && prev.some((d) => d.id === cur.selectedDrawingId);
+    set({ drawings: prev, undoStack, redoStack, selectedDrawingId: stillThere ? cur.selectedDrawingId : null });
+    persistDrawings(prev);
+  },
+  redo: () => {
+    const cur = get();
+    if (cur.redoStack.length === 0) return;
+    const redoStack = cur.redoStack.slice();
+    const next = redoStack.pop() as DrawingObject[];
+    const undoStack = pushHistory(cur.undoStack, cur.drawings);
+    const stillThere = cur.selectedDrawingId != null && next.some((d) => d.id === cur.selectedDrawingId);
+    set({ drawings: next, undoStack, redoStack, selectedDrawingId: stillThere ? cur.selectedDrawingId : null });
+    persistDrawings(next);
   },
   setWindowRect: (id, rect) => {
     const windows = { ...get().windows, [id]: rect };

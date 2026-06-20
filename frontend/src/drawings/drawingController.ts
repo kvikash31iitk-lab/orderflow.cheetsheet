@@ -12,8 +12,8 @@
 import type { IChartApi, UTCTimestamp } from "lightweight-charts";
 import { useStore } from "../store/useStore";
 import type { FootprintSeriesApi } from "../charts/footprintSeries";
-import { DrawingPrimitive, type DrawingRenderState } from "./DrawingPrimitive";
-import { hitTestDrawing, hitTestHandle, dist, type Px } from "./geometry";
+import { DrawingPrimitive, type AvwapSelection, type DrawingRenderState } from "./DrawingPrimitive";
+import { hitTestDrawing, hitTestHandle, dist, distToSegment, HIT_TOLERANCE, type Px } from "./geometry";
 import {
   DEFAULT_DRAWING_STYLE,
   drawingDisplayName,
@@ -22,7 +22,29 @@ import {
   type ChartPoint,
   type DrawingObject,
   type DrawingTool,
+  type SnapMode,
 } from "./types";
+import type { FootprintCandle } from "../types/orderflow";
+
+// Magnet/snap: pull a free price onto the nearest candle feature for the snap mode.
+function snapPrice(mode: SnapMode, candle: FootprintCandle, target: number): number {
+  if (mode === "vwap") return candle.vwap ?? target;
+  if (mode === "poc") return candle.poc ?? target;
+  if (mode === "ohlc") {
+    const cands = [candle.open, candle.high, candle.low, candle.close];
+    let best = cands[0];
+    let bd = Math.abs(target - best);
+    for (const v of cands) {
+      const d = Math.abs(target - v);
+      if (d < bd) {
+        bd = d;
+        best = v;
+      }
+    }
+    return best;
+  }
+  return target;
+}
 
 type Interaction =
   | { kind: "creating"; tool: DrawingTool; pointerId: number; lastPx: Px }
@@ -39,6 +61,14 @@ export function createDrawingController(opts: {
   let draft: DrawingObject | null = null;
   let interaction: Interaction | null = null;
 
+  // the main "Anchored VWAP" line output for a given indicator id (price pane), if any
+  const avwapLineFor = (indicatorId: string) => {
+    const st = useStore.getState();
+    return st.indicatorOutputs.find(
+      (o) => o.type === "line" && o.indicatorId === indicatorId && (o.pane ?? "price") === "price",
+    );
+  };
+
   // ---- the render-state provider the primitive reads every paint ----
   const provider = (): DrawingRenderState => {
     const st = useStore.getState();
@@ -50,7 +80,16 @@ export function createDrawingController(opts: {
         ? committed.map((d) => (d.id === draft!.id ? draft! : d))
         : [...committed, draft];
     }
-    return { drawings: list, selectedId: st.selectedDrawingId, theme: st.theme };
+    // highlight a selected Anchored VWAP by tracing its plotted line
+    let avwapSelection: AvwapSelection | null = null;
+    if (st.selectedIndicatorId) {
+      const ind = st.indicators.find((i) => i.id === st.selectedIndicatorId && i.kind === "anchored-vwap");
+      const line = ind ? avwapLineFor(ind.id) : undefined;
+      if (line && line.type === "line" && line.points.length) {
+        avwapSelection = { points: line.points, color: line.color };
+      }
+    }
+    return { drawings: list, selectedId: st.selectedDrawingId, theme: st.theme, avwapSelection };
   };
 
   const primitive = new DrawingPrimitive(provider);
@@ -88,7 +127,15 @@ export function createDrawingController(opts: {
       if (!cs.length) return null;
       ms = px.x < 0 ? cs[0].startTime : cs[cs.length - 1].startTime;
     }
-    return { time: snap(ms), price: price as number };
+    const time = snap(ms);
+    // magnet/snap: pull the free price onto the snapped candle's OHLC / POC / VWAP
+    let outPrice = price as number;
+    const st = useStore.getState();
+    if (st.snapMode !== "off") {
+      const c = st.candles.find((cc) => cc.startTime === time);
+      if (c) outPrice = snapPrice(st.snapMode, c, outPrice);
+    }
+    return { time, price: outPrice };
   };
   const dataToPx = (pt: ChartPoint): Px | null => {
     const y = series.priceToCoordinate(pt.price);
@@ -113,6 +160,30 @@ export function createDrawingController(opts: {
     const box = dims();
     for (let i = list.length - 1; i >= 0; i--) {
       if (hitTestDrawing(list[i], dataToPx, local, box)) return list[i];
+    }
+    return null;
+  };
+
+  // pick an enabled Anchored VWAP whose plotted line passes near `local` (returns the
+  // indicator id). Tests every AVWAP line segment (incl. SD bands) on the price pane.
+  const pickAvwapAt = (local: Px): string | null => {
+    const st = useStore.getState();
+    const avwapIds = new Set(
+      st.indicators.filter((i) => i.kind === "anchored-vwap" && i.enabled).map((i) => i.id),
+    );
+    if (!avwapIds.size) return null;
+    const lines = st.indicatorOutputs.filter(
+      (o) => o.type === "line" && avwapIds.has(o.indicatorId) && (o.pane ?? "price") === "price",
+    );
+    for (let li = lines.length - 1; li >= 0; li--) {
+      const o = lines[li];
+      if (o.type !== "line") continue;
+      const pts = o.points;
+      for (let i = 1; i < pts.length; i++) {
+        const a = dataToPx({ time: pts[i - 1].time, price: pts[i - 1].value });
+        const b = dataToPx({ time: pts[i].time, price: pts[i].value });
+        if (a && b && distToSegment(local, a, b) <= HIT_TOLERANCE) return o.indicatorId;
+      }
     }
     return null;
   };
@@ -200,7 +271,19 @@ export function createDrawingController(opts: {
         if (!hit.locked) startMove(e, hit, local);
         return;
       }
-      if (st.selectedDrawingId) useStore.getState().selectDrawing(null);
+      // nothing drawn hit -> try an Anchored VWAP line (select-only; re-anchor/delete
+      // happen via its selection toolbar). Don't start a move gesture for it.
+      const avwapId = pickAvwapAt(local);
+      if (avwapId) {
+        useStore.getState().selectIndicator(avwapId);
+        requestUpdate();
+        return;
+      }
+      if (st.selectedDrawingId || st.selectedIndicatorId) {
+        useStore.getState().selectDrawing(null);
+        useStore.getState().selectIndicator(null);
+        requestUpdate();
+      }
       return; // empty space -> let the chart pan
     }
 
@@ -293,13 +376,28 @@ export function createDrawingController(opts: {
     requestUpdate();
   };
 
-  // ---- keyboard: Esc cancels tool/selection, Delete removes selection ----
+  // ---- keyboard: undo/redo, Esc cancels tool/selection, Delete removes selection ----
   const onKeyDown = (e: KeyboardEvent) => {
     const el = document.activeElement as HTMLElement | null;
     const editing =
       el != null &&
       (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable);
     if (editing) return;
+
+    // undo / redo (Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y). Skips while a gesture
+    // is mid-flight so we don't restore underneath an active drag.
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && (e.key === "z" || e.key === "Z")) {
+      e.preventDefault();
+      if (!interaction) (e.shiftKey ? useStore.getState().redo : useStore.getState().undo)();
+      return;
+    }
+    if (mod && (e.key === "y" || e.key === "Y")) {
+      e.preventDefault();
+      if (!interaction) useStore.getState().redo();
+      return;
+    }
+
     const st = useStore.getState();
     if (e.key === "Escape") {
       if (interaction) {
@@ -308,11 +406,17 @@ export function createDrawingController(opts: {
       }
       if (st.activeTool !== "select") useStore.getState().setActiveTool("select");
       else if (st.selectedDrawingId) useStore.getState().selectDrawing(null);
+      else if (st.selectedIndicatorId) useStore.getState().selectIndicator(null);
       syncPanAndCursor();
       requestUpdate();
-    } else if ((e.key === "Delete" || e.key === "Backspace") && st.selectedDrawingId) {
-      e.preventDefault();
-      useStore.getState().removeDrawing(st.selectedDrawingId);
+    } else if (e.key === "Delete" || e.key === "Backspace") {
+      if (st.selectedDrawingId) {
+        e.preventDefault();
+        useStore.getState().removeDrawing(st.selectedDrawingId);
+      } else if (st.selectedIndicatorId) {
+        e.preventDefault();
+        useStore.getState().removeIndicator(st.selectedIndicatorId);
+      }
     }
   };
 
@@ -322,6 +426,8 @@ export function createDrawingController(opts: {
     if (
       s.drawings !== prev.drawings ||
       s.selectedDrawingId !== prev.selectedDrawingId ||
+      s.selectedIndicatorId !== prev.selectedIndicatorId ||
+      s.indicatorOutputs !== prev.indicatorOutputs ||
       s.theme !== prev.theme ||
       s.activeTool !== prev.activeTool ||
       s.symbol !== prev.symbol
