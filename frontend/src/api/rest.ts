@@ -1,5 +1,7 @@
 import type { AlertMsg, Fill, FootprintCandle, Order, Position, ResearchReport, ScannerRow, SymbolConfig } from "../types/orderflow";
-import type { Sc1Coverage, Sc1ExitReport, Sc1RunReport, Sc1SweepReport } from "../types/sc1research";
+import type {
+  Sc1Candidate, Sc1Coverage, Sc1ExitReport, Sc1Job, Sc1Page, Sc1RunReport, Sc1SweepReport, Sc1Trade,
+} from "../types/sc1research";
 
 export interface TradeOrderBody {
   symbol: string;
@@ -73,6 +75,24 @@ export const api = {
     j<Sc1ExitReport>("/api/research/sc1/compare-exits", { method: "POST", body: JSON.stringify(body) }),
   sc1Sweep: (body: { symbol: string; timeframe?: string; start?: number | null; end?: number | null; use5s?: boolean; config?: Record<string, number | boolean | string>; grid: Record<string, number[]>; exit?: Record<string, number | number[]>; exitModel?: string }) =>
     j<Sc1SweepReport>("/api/research/sc1/sweep", { method: "POST", body: JSON.stringify(body) }),
+
+  // SC1 large-dataset jobs (async, polled)
+  sc1CreateJob: (body: {
+    mode: "large_run" | "walk_forward"; symbol: string; timeframe?: string;
+    start?: number | null; end?: number | null; use5s?: boolean;
+    config?: Record<string, number | boolean | string>; exit?: Record<string, number | number[]>;
+    walkForward?: { windows: number; trainFrac: number; valFrac: number; testFrac: number };
+    optimize?: { method: string; params?: string[]; budget?: number; seed?: number; exitModel?: string; minSample?: number };
+  }) => j<{ ok: boolean; job?: Sc1Job; error?: string }>("/api/research/sc1/jobs", { method: "POST", body: JSON.stringify(body) }),
+  sc1JobList: () => j<{ ok: boolean; jobs: Sc1Job[] }>("/api/research/sc1/jobs"),
+  sc1JobStatus: (id: string) => j<Sc1Job>(`/api/research/sc1/jobs/${encodeURIComponent(id)}`),
+  sc1JobCancel: (id: string) => j<{ ok: boolean; jobId: string }>(`/api/research/sc1/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST" }),
+  sc1JobCandidates: (id: string, q: { page?: number; size?: number; klass?: string; side?: string } = {}) =>
+    j<Sc1Page<Sc1Candidate>>(`/api/research/sc1/jobs/${encodeURIComponent(id)}/candidates?` +
+      new URLSearchParams(Object.entries(q).filter(([, v]) => v != null && v !== "").map(([k, v]) => [k, String(v)])).toString()),
+  sc1JobTrades: (id: string, q: { page?: number; size?: number; exitModel?: string; klass?: string; side?: string; result?: string } = {}) =>
+    j<Sc1Page<Sc1Trade>>(`/api/research/sc1/jobs/${encodeURIComponent(id)}/trades?` +
+      new URLSearchParams(Object.entries(q).filter(([, v]) => v != null && v !== "").map(([k, v]) => [k, String(v)])).toString()),
 
   // simulated trading
   tradeOrder: (body: TradeOrderBody) =>

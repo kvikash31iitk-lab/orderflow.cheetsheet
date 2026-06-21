@@ -153,37 +153,46 @@ async def run(pg, symbol: str, timeframe: str, start_ms: Optional[int], end_ms: 
 
 
 # ------------------------------------------------------------- exit comparison
-def _summarize(outcomes: list[TradeOutcome]) -> dict:
-    if not outcomes:
+def _lite(o: TradeOutcome) -> dict:
+    """Scalar projection of an outcome for summary accumulation. Large jobs accumulate these
+    (~7 numbers) instead of retaining the full TradeOutcome objects, bounding memory."""
+    return {"r": o.r_multiple, "net": o.net_points, "mae": o.mae, "mfe": o.mfe,
+            "side": o.side, "win": o.win, "t": o.entry_time, "sig": o.signal_time,
+            "klass": o.candidate_class, "model": o.exit_model}
+
+
+def _summarize(items: list[dict]) -> dict:
+    """Summarise a list of `_lite` scalar dicts (works for the quick path and large jobs)."""
+    if not items:
         return {"n": 0, "expectancyR": 0.0, "winRate": 0.0, "profitFactor": 0.0,
                 "avgMae": 0.0, "avgMfe": 0.0, "medMae": 0.0, "medMfe": 0.0, "maxDrawdownR": 0.0,
                 "long": 0, "short": 0}
     # filter non-finite so one bad trade can't poison an aggregate into NaN
-    rs = [o.r_multiple for o in outcomes if math.isfinite(o.r_multiple)] or [0.0]
-    wins = [o.net_points for o in outcomes if math.isfinite(o.net_points) and o.net_points > 0]
-    losses = [o.net_points for o in outcomes if math.isfinite(o.net_points) and o.net_points <= 0]
-    maes = [o.mae for o in outcomes if math.isfinite(o.mae)] or [0.0]
-    mfes = [o.mfe for o in outcomes if math.isfinite(o.mfe)] or [0.0]
+    rs = [it["r"] for it in items if math.isfinite(it["r"])] or [0.0]
+    wins = [it["net"] for it in items if math.isfinite(it["net"]) and it["net"] > 0]
+    losses = [it["net"] for it in items if math.isfinite(it["net"]) and it["net"] <= 0]
+    maes = [it["mae"] for it in items if math.isfinite(it["mae"])] or [0.0]
+    mfes = [it["mfe"] for it in items if math.isfinite(it["mfe"])] or [0.0]
     # equity curve in R (by entry time) for drawdown
-    seq = sorted(outcomes, key=lambda o: o.entry_time)
+    seq = sorted(items, key=lambda it: it["t"])
     eq = 0.0
     peak = 0.0
     mdd = 0.0
-    for o in seq:
-        eq += o.r_multiple if math.isfinite(o.r_multiple) else 0.0
+    for it in seq:
+        eq += it["r"] if math.isfinite(it["r"]) else 0.0
         peak = max(peak, eq)
         mdd = max(mdd, peak - eq)
     pf = (sum(wins) / abs(sum(losses))) if losses and sum(losses) != 0 else (float("inf") if wins else 0.0)
     return {
-        "n": len(outcomes),
+        "n": len(items),
         "expectancyR": round(sum(rs) / len(rs), 4),
-        "winRate": round(sum(1 for o in outcomes if o.win) / len(outcomes), 4),
+        "winRate": round(sum(1 for it in items if it["win"]) / len(items), 4),
         "profitFactor": round(pf, 3) if pf != float("inf") else None,
         "avgMae": round(sum(maes) / len(maes), 4), "avgMfe": round(sum(mfes) / len(mfes), 4),
         "medMae": round(median(maes), 4), "medMfe": round(median(mfes), 4),
         "maxDrawdownR": round(mdd, 4),
-        "long": sum(1 for o in outcomes if o.side == "long"),
-        "short": sum(1 for o in outcomes if o.side == "short"),
+        "long": sum(1 for it in items if it["side"] == "long"),
+        "short": sum(1 for it in items if it["side"] == "short"),
     }
 
 
@@ -225,16 +234,16 @@ def compare_exits(run_id: str, exit_cfg: ExitConfig, classes: Optional[list[str]
     if not run:
         return {"ok": False, "error": "run not found (re-run /research/sc1/run)", "matrix": []}
     outs = _eval_all(run["candles"], run["candidates"], exit_cfg, classes)
-    models = sorted({o.exit_model for o in outs})
+    lite = [_lite(o) for o in outs]
+    models = sorted({it["model"] for it in lite})
     klasses = ["baseline", "blocked_by_candle", "near_miss"]
     matrix = []
     for kl in klasses:
         row = {"class": kl, "cells": {}}
         for m in models:
-            sub = [o for o in outs if o.candidate_class == kl and o.exit_model == m]
-            row["cells"][m] = _summarize(sub)
+            row["cells"][m] = _summarize([it for it in lite if it["klass"] == kl and it["model"] == m])
         matrix.append(row)
-    overall = {m: _summarize([o for o in outs if o.exit_model == m]) for m in models}
+    overall = {m: _summarize([it for it in lite if it["model"] == m]) for m in models}
     return _scrub({
         "ok": True, "runId": run_id, "models": models, "matrix": matrix, "overall": overall,
         "exitConfig": exit_cfg.to_dict(),
@@ -262,8 +271,7 @@ def _sweep_compute(rows, five_s, tick_ts, tick_px, base_cfg: Sc1Config, grid: di
         res = run_engine(rows, cfg, five_s)
         _resolve_entries(rows, res["candidates"], tick_ts, tick_px)
         outs = _eval_all(rows, res["candidates"], exit_cfg, ["baseline"])
-        outs = [o for o in outs if o.exit_model == exit_model]
-        summ = _summarize(outs)
+        summ = _summarize([_lite(o) for o in outs if o.exit_model == exit_model])
         # objective: expectancy R, penalised for thin samples
         n = summ["n"]
         sample_pen = 0.0 if n >= min_sample else (min_sample - n) * 0.05

@@ -9,7 +9,7 @@ import DeltaHistogram from "../widgets/DeltaHistogram";
 import DomLadder from "../widgets/DomLadder";
 import ReplayControls from "../widgets/ReplayControls";
 import ResearchPanel from "../widgets/ResearchPanel";
-import Sc1ResearchLab from "../widgets/Sc1ResearchLab";
+import Sc1ResearchView from "../widgets/Sc1ResearchView";
 import Scanner from "../widgets/Scanner";
 import DrawingToolbar from "./DrawingToolbar";
 import ObjectTreePanel from "../widgets/ObjectTreePanel";
@@ -125,7 +125,7 @@ export default function Dashboard() {
         </div>
       ) : view === "sc1lab" ? (
         <div className="min-h-0 flex-1">
-          <Sc1ResearchLab />
+          <Sc1ResearchView />
         </div>
       ) : (
         <div className="flex min-h-0 flex-1">

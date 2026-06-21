@@ -173,6 +173,59 @@ class PostgresRepo:
                     symbol, timeframe, limit)
         return [self._row_to_candle_dict(r) for r in reversed(rows)]
 
+    @staticmethod
+    def _rows_to_range_dicts(rows) -> list[dict]:
+        # rows come newest-first (DESC); reverse to ascending. Built off the event loop.
+        return [{
+            "symbol": r["symbol"], "timeframe": r["timeframe"],
+            "startTime": r["start_time"], "endTime": r["end_time"], "rowSize": r["row_size"],
+            "open": r["open"], "high": r["high"], "low": r["low"], "close": r["close"],
+            "totalVolume": r["total_volume"], "totalBidVolume": r["bid_volume"],
+            "totalAskVolume": r["ask_volume"], "delta": r["delta"], "cumDelta": r["cum_delta"],
+            "poc": r["poc"], "closed": True,
+        } for r in reversed(rows)]
+
+    async def footprints_range(self, symbol: str, timeframe: str, start_ms: int, end_ms: int,
+                               row_size: Optional[float] = None, limit: int = 2_000_000) -> list[dict]:
+        """Closed candles in [start_ms, end_ms], ascending — for date-range/large-dataset
+        research. Fetches the MOST-RECENT `limit` bars in the range (DESC LIMIT, reversed),
+        so capping a huge range keeps recent data, not stale oldest data. Selects only the
+        columns the SC1 engine needs (no cells ladders), and builds the dicts off the event
+        loop (up to ~250k rows) so the live feed isn't stalled."""
+        if not self.enabled:
+            return []
+        cols = ("symbol, timeframe, start_time, end_time, row_size, open, high, low, close, "
+                "total_volume, bid_volume, ask_volume, delta, cum_delta, poc")
+        async with self.pool.acquire() as con:
+            if row_size is not None:
+                rows = await con.fetch(
+                    f"SELECT {cols} FROM footprints WHERE symbol=$1 AND timeframe=$2 AND row_size=$3 "
+                    "AND start_time BETWEEN $4 AND $5 ORDER BY start_time DESC LIMIT $6",
+                    symbol, timeframe, row_size, start_ms, end_ms, limit)
+            else:
+                rows = await con.fetch(
+                    f"SELECT {cols} FROM footprints WHERE symbol=$1 AND timeframe=$2 "
+                    "AND start_time BETWEEN $3 AND $4 ORDER BY start_time DESC LIMIT $5",
+                    symbol, timeframe, start_ms, end_ms, limit)
+        return await asyncio.to_thread(self._rows_to_range_dicts, rows)
+
+    async def footprints_minmax(self, symbol: str, timeframe: str, row_size: Optional[float] = None) -> Optional[dict]:
+        """(min_start, max_start, count) of stored candles for a symbol+timeframe."""
+        if not self.enabled:
+            return None
+        async with self.pool.acquire() as con:
+            if row_size is not None:
+                row = await con.fetchrow(
+                    "SELECT min(start_time) lo, max(start_time) hi, count(*) n FROM footprints "
+                    "WHERE symbol=$1 AND timeframe=$2 AND row_size=$3", symbol, timeframe, row_size)
+            else:
+                row = await con.fetchrow(
+                    "SELECT min(start_time) lo, max(start_time) hi, count(*) n FROM footprints "
+                    "WHERE symbol=$1 AND timeframe=$2", symbol, timeframe)
+        if not row or row["lo"] is None:
+            return None
+        return {"minStart": int(row["lo"]), "maxStart": int(row["hi"]), "count": int(row["n"])}
+
     async def ticks_range(self, symbol: str, start_ms: int, end_ms: int, limit: int = 500_000) -> list[dict]:
         if not self.enabled:
             return []

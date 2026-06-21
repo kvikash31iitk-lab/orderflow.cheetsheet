@@ -92,7 +92,8 @@ def _apply_5s(O, T, ends, BUY, SELL, D, MAXD, MIND, five_s, parent_ms, min_cov):
     return used
 
 
-def run_engine(candles: list[dict], cfg: Sc1Config, five_s: Optional[list[dict]] = None) -> dict:
+def run_engine(candles: list[dict], cfg: Sc1Config, five_s: Optional[list[dict]] = None,
+               collect_bars: bool = True) -> dict:
     """Compute I1 diagnostics + candidates over closed parent candles.
 
     `candles`: stored footprint dicts (open/high/low/close/startTime/endTime/totalVolume/
@@ -283,6 +284,16 @@ def run_engine(candles: list[dict], cfg: Sc1Config, five_s: Optional[list[dict]]
         doji = is_doji(i)
         bull_candle[i] = (not cfg.i1_useSignalCandleFilter) or doji or is_hammer(i) or is_inv_hammer(i)
         bear_candle[i] = (not cfg.i1_useSignalCandleFilter) or doji or is_shooting_star(i)
+
+        # The full per-bar diagnostic dict is heavy (nested components/weights/trend). In
+        # large-dataset mode (collect_bars=False) build it ONLY for bars that can become a
+        # candidate — so we never retain ~n dicts for hundreds of thousands of bars.
+        # Candidate bars need a setup THIS bar (no-confirm path) or the PRIOR bar (confirm
+        # path: raw/blocked at i use setup[i-1]) or a near-miss this bar. Candidate output
+        # is byte-identical; only the discarded `bars` list shrinks.
+        if not (collect_bars or bull_setup[i] or bear_setup[i] or near_bull[i] or near_bear[i]
+                or bull_setup[i - 1] or bear_setup[i - 1]):
+            continue
 
         diag[i] = {
             "index": i, "startTime": int(T[i]), "endTime": int(ENDS[i]) if is_fin(ENDS[i]) else int(T[i] + parent_ms),

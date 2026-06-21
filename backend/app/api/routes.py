@@ -207,6 +207,7 @@ async def research_sync(req: Request, horizon: int = 5) -> dict:
 # Deterministic, offline re-implementation of the SC1 super signal (Indicator 1).
 # Does NOT touch the live SC1 V4 indicator; reads stored candles + ticks only.
 from ..research.sc1 import service as sc1_service
+from ..research.sc1 import large as sc1_large
 from ..research.sc1.config import ExitConfig, Sc1Config
 
 
@@ -282,6 +283,90 @@ async def sc1_sweep(req: Request, body: Sc1Sweep) -> dict:
     base = _sc1_config(body.config)
     return await sc1_service.sweep(_pipeline(req).pg, body.symbol, tf, body.start, body.end,
                                    base, body.grid, _exit_config(body.exit), body.exitModel, body.use5s)
+
+
+# ---------------- SC1 large-dataset jobs (async, polled — for 5y-scale research) ----------------
+class Sc1WalkForward(BaseModel):
+    windows: int = 4
+    trainFrac: float = 0.6
+    valFrac: float = 0.2
+    testFrac: float = 0.2
+
+
+class Sc1Optimize(BaseModel):
+    method: str = "coordinate"            # coordinate | grid | random
+    params: list[str] | None = None       # subset of the bounded search space
+    budget: int = 60
+    seed: int = 1
+    exitModel: str = "fixed_2R"
+    minSample: int = 25
+
+
+class Sc1JobCreate(BaseModel):
+    mode: str                             # "large_run" | "walk_forward"
+    symbol: str
+    timeframe: str | None = None
+    start: int | None = None
+    end: int | None = None
+    use5s: bool = False                   # history uses parent orderflow by default
+    config: dict = {}
+    exit: dict = {}
+    walkForward: Sc1WalkForward = Sc1WalkForward()
+    optimize: Sc1Optimize = Sc1Optimize()
+
+
+@router.post("/research/sc1/jobs")
+async def sc1_job_create(req: Request, body: Sc1JobCreate) -> dict:
+    tf = body.timeframe or settings.default_timeframe
+    cfg = _sc1_config(body.config)
+    exit_cfg = _exit_config(body.exit)
+    pg = _pipeline(req).pg
+    echo = {"mode": body.mode, "symbol": body.symbol.upper(), "timeframe": tf,
+            "start": body.start, "end": body.end, "use5s": body.use5s, "config": cfg.to_dict()}
+    if body.mode == "walk_forward":
+        if body.optimize.method not in ("coordinate", "grid", "random"):
+            raise HTTPException(status_code=422, detail=f"unknown optimizer method: {body.optimize.method}")
+        echo["walkForward"] = body.walkForward.model_dump()
+        echo["optimize"] = body.optimize.model_dump()
+        return await sc1_large.start_walkforward_job(
+            pg, body.symbol, tf, body.start, body.end, cfg, exit_cfg, body.use5s,
+            body.walkForward.model_dump(), body.optimize.model_dump(), echo)
+    if body.mode == "large_run":
+        return await sc1_large.start_large_job(
+            pg, body.symbol, tf, body.start, body.end, cfg, exit_cfg, body.use5s, echo)
+    raise HTTPException(status_code=422, detail=f"unknown job mode: {body.mode}")
+
+
+@router.get("/research/sc1/jobs")
+async def sc1_job_list() -> dict:
+    return sc1_large.job_list()
+
+
+@router.get("/research/sc1/jobs/{job_id}")
+async def sc1_job_get(job_id: str) -> dict:
+    return sc1_large.job_status(job_id)
+
+
+@router.post("/research/sc1/jobs/{job_id}/cancel")
+async def sc1_job_cancel(job_id: str) -> dict:
+    return sc1_large.job_cancel(job_id)
+
+
+@router.get("/research/sc1/jobs/{job_id}/candidates")
+async def sc1_job_candidates(job_id: str, page: int = 0, size: int = 100,
+                             klass: str | None = None, side: str | None = None) -> dict:
+    return sc1_large.job_candidates(job_id, page, size, klass, side)
+
+
+@router.get("/research/sc1/jobs/{job_id}/trades")
+async def sc1_job_trades(job_id: str, page: int = 0, size: int = 100, exitModel: str | None = None,
+                         klass: str | None = None, side: str | None = None, result: str | None = None) -> dict:
+    return sc1_large.job_trades(job_id, page, size, exitModel, klass, side, result)
+
+
+@router.get("/research/sc1/jobs/{job_id}/matrix")
+async def sc1_job_matrix(job_id: str) -> dict:
+    return sc1_large.job_matrix(job_id)
 
 
 # ----------------------------- simulated trading -----------------------------

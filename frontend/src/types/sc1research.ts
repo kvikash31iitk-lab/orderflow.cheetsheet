@@ -148,3 +148,90 @@ export interface Sc1SweepReport {
   leaderboard?: Sc1LeaderRow[];
   note?: string;
 }
+
+// ---------------------------------------------------------------- large-dataset jobs
+export type Sc1JobMode = "large_run" | "walk_forward";
+export type Sc1JobStatusName = "queued" | "running" | "done" | "failed" | "cancelled";
+
+export interface Sc1JobProgress {
+  phase: string;
+  current: number;
+  total: number;
+  message: string;
+}
+
+export interface Sc1Job {
+  ok?: boolean;
+  id: string;
+  type: string;
+  status: Sc1JobStatusName;
+  progress: Sc1JobProgress;
+  error: string | null;
+  createdAt: number;
+  startedAt: number | null;
+  finishedAt: number | null;
+  elapsedSec: number | null;
+  hasResult: boolean;
+  counts: { candidates: number; trades: number };
+  params?: Record<string, unknown>;
+  result?: Sc1LargeResult | Sc1WalkForwardResult;
+}
+
+export interface Sc1JobRange {
+  minStart: number; maxStart: number; bars: number; spanDays: number;
+  truncated: boolean; maxBars: number; requestedFrom?: number; requestedTo?: number;
+}
+
+export interface Sc1LargeResult {
+  mode: "large_run";
+  symbol: string; timeframe: string;
+  config: Record<string, number | boolean | string>;
+  exitConfig: Record<string, number | number[]>;
+  range: Sc1JobRange;
+  orderflow: { used5s: number; totalBars: number; source5sActive: boolean };
+  inventory: Sc1Inventory;
+  candidateCount: number;
+  models: string[];
+  matrix: Sc1ExitMatrixRow[];
+  overall: Record<string, Sc1Summary>;
+  drilldownSample: number;
+}
+
+export interface Sc1WfSegMeta { loIdx: number; hiIdx: number; bars: number; startTime: number | null; endTime: number | null; }
+export interface Sc1Fold {
+  window: number;
+  windowMeta: { index: number; train: Sc1WfSegMeta; val: Sc1WfSegMeta; test: Sc1WfSegMeta };
+  selected: {
+    changed: Record<string, number | boolean>;
+    train: Sc1Summary; val: Sc1Summary; test: Sc1Summary;
+    trainToTestDegradationR: number; overfit: boolean;
+  };
+  baseline: { train: Sc1Summary; val: Sc1Summary; test: Sc1Summary };
+  selectedBeatsBaselineOOS: boolean;
+  warnings: string[];
+}
+export interface Sc1ParamStability { values: (number | boolean | string)[]; distinct: number; stable: boolean; }
+export interface Sc1WalkForwardResult {
+  mode: "walk_forward";
+  symbol: string; timeframe: string; exitModel: string;
+  range: Sc1JobRange;
+  search: { method: string; params: string[]; configsEvaluated: number; seed: number };
+  windows: { index: number; train: Sc1WfSegMeta; val: Sc1WfSegMeta; test: Sc1WfSegMeta }[];
+  folds: Sc1Fold[];
+  stability: {
+    folds: number; selectedBeatsBaselineOOS: number; testPositiveFolds: number;
+    meanTestExpectancyR: number; stdTestExpectancyR: number;
+    paramStability: Record<string, Sc1ParamStability>;
+  };
+  warnings: string[];
+  note: string;
+}
+
+export interface Sc1Page<T> {
+  ok: boolean;
+  jobId?: string;
+  page: number; pageSize: number; total: number; pages: number;
+  items: T[];
+  drilldownSampleOnly?: boolean;
+  error?: string;
+}
