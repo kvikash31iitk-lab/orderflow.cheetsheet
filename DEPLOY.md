@@ -78,6 +78,24 @@ ssh hostinger-VPS-new 'cd /root/orderflow && tar xzf /root/orderflow.tgz \
 (Single files can also just be `scp`'d into `/root/orderflow/...` followed by a
 `--build` of the affected service.)
 
+## ⚠️ Frontend-only deploy — ALWAYS use `--no-deps`
+When you've changed **only** frontend code and must NOT disturb the live backend (its
+in-memory pipeline/broker state, feed connection, and uptime), deploy with `--no-deps`:
+```bash
+cd /root/orderflow
+docker compose -f docker-compose.vps.yml up -d --build --no-deps frontend
+```
+**Why `--no-deps` is mandatory here:** the `frontend` service declares `depends_on: backend`
+in `docker-compose.vps.yml`, so a plain `docker compose up -d --build frontend` pulls the
+backend in as a dependency and **recreates (restarts) it** — resetting backend uptime and
+in-memory state even though no backend code changed. `--no-deps` builds/recreates ONLY the
+named service and leaves its dependencies running untouched. (Confirm afterwards that the
+backend uptime is unchanged and `/api/status` is still `connected`.)
+
+For a backend (or backend+frontend) change, a backend restart IS expected — deploy with
+`docker compose -f docker-compose.vps.yml up -d --build backend frontend` (or `backend`
+alone) and say so explicitly before doing it.
+
 ## TLS / cert
 Issued via `certbot --nginx -d orderflow.cheetsheet.tech` (HTTP-01). Renewal is a
 systemd timer certbot installed automatically; verify with:
