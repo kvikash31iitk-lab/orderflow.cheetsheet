@@ -45,6 +45,10 @@ Thumbs.db
 pgdata/
 redisdata/
 
+# SC1 research-only historical Parquet dataset (normalized GC.V.0 — never commit data)
+research_data/
+backend/research_data/
+
 # Agent / local tooling + deploy artifacts
 .claude/
 orderflow.tgz

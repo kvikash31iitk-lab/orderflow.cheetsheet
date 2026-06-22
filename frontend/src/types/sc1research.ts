@@ -18,6 +18,18 @@ export interface Sc1Coverage {
   notes: string[];
 }
 
+/** Coverage of the read-only historical GC.V.0 Parquet dataset (research-only source). */
+export interface Sc1HistoricalCoverage {
+  symbol: string;
+  source: "historical_parquet";
+  dataRoot: string;
+  available: boolean;
+  ticks: { minTs: number; maxTs: number; count: number; fromDay: string; toDay: string } | null;
+  timeframes: (Sc1CoverageTf & { fromDay: string; toDay: string })[];
+  derivedTimeframes: string[];
+  notes: string[];
+}
+
 export type Sc1ComponentKey =
   | "swing" | "exhaust" | "absorption" | "trap" | "cvd"
   | "reversal" | "reject" | "strongClose" | "lowVol" | "liqSweep";

@@ -59,7 +59,15 @@ async def _load_range(pg, symbol, timeframe, start_ms, end_ms, use_5s):
     tick_px: list[float] = []
     used5s = False
     if rows and use_5s:
-        ticks = await pg.recent_ticks(symbol, rows[0]["startTime"], limit=MAX_RESEARCH_TICKS)
+        # Historical Parquet providers (windowed_ticks) fetch ticks BOUNDED to the analysis
+        # window [first bar start, last bar end] — otherwise an old window's most-recent-N tick
+        # cap would pull ticks from the dataset END (e.g. 2026) instead of the requested period.
+        # Live Postgres has no such attr -> unchanged recent_ticks path (data ends ~now anyway).
+        if getattr(pg, "windowed_ticks", False):
+            hi_tick = max(int(r.get("endTime") or r["startTime"]) for r in rows)
+            ticks = await pg.ticks_range(symbol, rows[0]["startTime"], hi_tick, limit=MAX_RESEARCH_TICKS)
+        else:
+            ticks = await pg.recent_ticks(symbol, rows[0]["startTime"], limit=MAX_RESEARCH_TICKS)
         if ticks:
             tick_ts, tick_px, five_s = await asyncio.to_thread(_build_5s, ticks, symbol, base)
             used5s = len(five_s) > 0

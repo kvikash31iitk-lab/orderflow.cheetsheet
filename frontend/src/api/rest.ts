@@ -1,6 +1,6 @@
 import type { AlertMsg, Fill, FootprintCandle, Order, Position, ResearchReport, ScannerRow, SymbolConfig } from "../types/orderflow";
 import type {
-  Sc1Candidate, Sc1Coverage, Sc1ExitReport, Sc1Job, Sc1Page, Sc1RunReport, Sc1SweepReport, Sc1Trade,
+  Sc1Candidate, Sc1Coverage, Sc1ExitReport, Sc1HistoricalCoverage, Sc1Job, Sc1Page, Sc1RunReport, Sc1SweepReport, Sc1Trade,
 } from "../types/sc1research";
 
 export interface TradeOrderBody {
@@ -30,7 +30,15 @@ async function j<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { "Content-Type": "application/json" },
     ...init,
   });
-  if (!res.ok) throw new Error(`${path} -> ${res.status}`);
+  if (!res.ok) {
+    // surface the API's validation detail (e.g. the historical span guardrail) instead of a bare status
+    let detail = "";
+    try {
+      const body = await res.json();
+      if (body?.detail) detail = `: ${typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail)}`;
+    } catch { /* non-JSON error body */ }
+    throw new Error(`${path} -> ${res.status}${detail}`);
+  }
   return res.json() as Promise<T>;
 }
 
@@ -76,10 +84,15 @@ export const api = {
   sc1Sweep: (body: { symbol: string; timeframe?: string; start?: number | null; end?: number | null; use5s?: boolean; config?: Record<string, number | boolean | string>; grid: Record<string, number[]>; exit?: Record<string, number | number[]>; exitModel?: string }) =>
     j<Sc1SweepReport>("/api/research/sc1/sweep", { method: "POST", body: JSON.stringify(body) }),
 
+  // SC1 historical Parquet dataset (research-only; read-only normalized GC.V.0)
+  sc1HistoricalCoverage: (symbol = "GC.V.0") =>
+    j<Sc1HistoricalCoverage>(`/api/research/sc1/historical/coverage?symbol=${encodeURIComponent(symbol)}`),
+
   // SC1 large-dataset jobs (async, polled)
   sc1CreateJob: (body: {
     mode: "large_run" | "walk_forward"; symbol: string; timeframe?: string;
     start?: number | null; end?: number | null; use5s?: boolean;
+    source?: "live_postgres" | "historical_parquet";
     config?: Record<string, number | boolean | string>; exit?: Record<string, number | number[]>;
     walkForward?: { windows: number; trainFrac: number; valFrac: number; testFrac: number };
     optimize?: { method: string; params?: string[]; budget?: number; seed?: number; exitModel?: string; minSample?: number };

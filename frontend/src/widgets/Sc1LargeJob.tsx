@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/rest";
 import { useStore } from "../store/useStore";
 import type {
-  Sc1Candidate, Sc1Fold, Sc1Job, Sc1LargeResult, Sc1Summary, Sc1Trade, Sc1WalkForwardResult,
+  Sc1Candidate, Sc1Fold, Sc1HistoricalCoverage, Sc1Job, Sc1LargeResult, Sc1Summary, Sc1Trade, Sc1WalkForwardResult,
 } from "../types/sc1research";
 
 /* ------------------------------- format helpers ------------------------------- */
@@ -70,6 +70,15 @@ export default function Sc1LargeJob({ mode }: { mode: "large_run" | "walk_forwar
   const symbol = useStore((s) => s.symbol);
   const timeframe = useStore((s) => s.timeframe);
 
+  // ---- data source: live DB (default, unchanged) vs read-only historical GC.V.0 Parquet ----
+  const [source, setSource] = useState<"live_postgres" | "historical_parquet">("live_postgres");
+  const [histTf, setHistTf] = useState("1m");
+  const [hCov, setHCov] = useState<Sc1HistoricalCoverage | null>(null);
+  const isHist = source === "historical_parquet";
+  const histSymbol = "GC.V.0";
+  const effSymbol = isHist ? histSymbol : symbol;
+  const effTimeframe = isHist ? histTf : timeframe;
+
   // ---- form state ----
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -113,6 +122,25 @@ export default function Sc1LargeJob({ mode }: { mode: "large_run" | "walk_forwar
     return () => { mounted.current = false; activeId.current = null; stopPoll(); };
   }, []);
 
+  // historical source: fetch dataset coverage; default the date range to the LAST 1 day of
+  // coverage (a safe small first run — NOT the full 5 years; the box caps span at
+  // SC1_RESEARCH_MAX_DAYS, default 7, and rejects wider requests).
+  useEffect(() => {
+    if (!isHist) { setHCov(null); return; }
+    let alive = true;
+    api.sc1HistoricalCoverage(histSymbol).then((c) => {
+      if (!alive) return;
+      setHCov(c);
+      const tf = c.timeframes.find((t) => t.timeframe === "1m") || c.timeframes[0];
+      if (tf && !dateFrom && !dateTo) {
+        setDateTo(toDateStr(tf.maxStart));
+        setDateFrom(toDateStr(tf.maxStart - 1 * 86_400_000));
+      }
+    }).catch(() => {});
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHist]);
+
   // Guard against (a) re-scheduling after unmount and (b) a stale poller from a previous
   // job racing a newly-started one — only the current active job id keeps polling.
   const poll = useCallback(async (id: string) => {
@@ -132,7 +160,7 @@ export default function Sc1LargeJob({ mode }: { mode: "large_run" | "walk_forwar
     setBusy(true); setError(""); setCands(null); setTrades(null); stopPoll();
     try {
       const body = {
-        mode, symbol, timeframe,
+        mode, symbol: effSymbol, timeframe: effTimeframe, source,
         start: toMs(dateFrom), end: toMs(dateTo), use5s,
         config: { i1_minStrength: minStrength, i1_netEdgeSignalThreshold: netEdge },
         walkForward: { windows, trainFrac, valFrac, testFrac },
@@ -146,7 +174,7 @@ export default function Sc1LargeJob({ mode }: { mode: "large_run" | "walk_forwar
     } finally {
       setBusy(false);
     }
-  }, [mode, symbol, timeframe, dateFrom, dateTo, use5s, minStrength, netEdge, windows, trainFrac, valFrac, testFrac, optMethod, optParams, optBudget, optSeed, optExitModel, poll]);
+  }, [mode, effSymbol, effTimeframe, source, dateFrom, dateTo, use5s, minStrength, netEdge, windows, trainFrac, valFrac, testFrac, optMethod, optParams, optBudget, optSeed, optExitModel, poll]);
 
   const cancel = useCallback(async () => {
     if (job) { try { await api.sc1JobCancel(job.id); } catch { /* ignore */ } }
@@ -176,13 +204,39 @@ export default function Sc1LargeJob({ mode }: { mode: "large_run" | "walk_forwar
         subtitle="async background job · polls for progress · live feed stays responsive">
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-end gap-3">
-            <span className="rounded bg-terminal-border px-2 py-1 text-[11px] text-terminal-muted">{symbol} · {timeframe}</span>
+            <Field label="Data source">
+              <select value={source} onChange={(e) => { setSource(e.target.value as "live_postgres" | "historical_parquet"); setJob(null); setError(""); }} className={inputCls}>
+                <option value="live_postgres">Live DB</option>
+                <option value="historical_parquet">Historical GC Parquet</option>
+              </select>
+            </Field>
+            {isHist ? (
+              <>
+                <span className="rounded bg-terminal-border px-2 py-1 text-[11px] text-terminal-muted">{histSymbol}</span>
+                <Field label="Timeframe">
+                  <select value={histTf} onChange={(e) => setHistTf(e.target.value)} className={inputCls}>
+                    <option value="1m">1m</option><option value="2m">2m</option><option value="3m">3m</option>
+                  </select>
+                </Field>
+              </>
+            ) : (
+              <span className="rounded bg-terminal-border px-2 py-1 text-[11px] text-terminal-muted">{symbol} · {timeframe}</span>
+            )}
             <Field label="From (UTC)"><input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className={inputCls} /></Field>
             <Field label="To (UTC)"><input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className={inputCls} /></Field>
             <Field label="Min strength"><input type="number" value={minStrength} onChange={(e) => setMinStrength(Number(e.target.value))} className={`${inputCls} w-20`} /></Field>
             <Field label="Net edge"><input type="number" value={netEdge} onChange={(e) => setNetEdge(Number(e.target.value))} className={`${inputCls} w-20`} /></Field>
             <label className="flex items-center gap-1 text-xs text-terminal-muted"><input type="checkbox" checked={use5s} onChange={(e) => setUse5s(e.target.checked)} /> 5s (recent only)</label>
           </div>
+
+          {isHist && (
+            <div className="text-[11px] text-terminal-muted">
+              {hCov?.available
+                ? <>Historical {hCov.symbol}: {hCov.timeframes.map((t) => `${t.timeframe} ${t.fromDay}→${t.toDay} (${t.count.toLocaleString()})`).join(" · ")}{hCov.derivedTimeframes.length ? ` · derived ${hCov.derivedTimeframes.join("/")}` : ""}</>
+                : hCov ? <span className="text-amber-400">No historical data at {hCov.dataRoot}. {hCov.notes.join(" ")}</span>
+                : "Loading historical coverage…"}
+            </div>
+          )}
 
           {mode === "walk_forward" && (
             <div className="flex flex-wrap items-end gap-3 border-t border-terminal-border pt-3">
@@ -238,7 +292,9 @@ export default function Sc1LargeJob({ mode }: { mode: "large_run" | "walk_forwar
 
       {/* data-safety banner */}
       <div className="rounded border border-amber-500/30 bg-amber-500/5 px-3 py-1.5 text-[11px] text-amber-300/90">
-        {mode === "walk_forward"
+        {isHist
+          ? "Historical source: read-only normalized GC.V.0 Parquet (the 5-year DataBento export), NOT the live footprints table. 1m carries real orderflow; 2m/3m are deterministically aggregated from 1m (POC approximated); 5s is reconstructed from ticks bounded to the window. Costs/slippage are conservative defaults. Window span is capped (default 7 days) on the shared box."
+          : mode === "walk_forward"
           ? "Walk-forward: parameters are chosen on TRAIN and reported on out-of-sample TEST. A config that only wins in-sample is overfit. Costs/slippage are conservative defaults; current data is recent GC, not the full 5-year set."
           : "Large job: historical bars use parent orderflow (5s only exists for the most-recent window). Costs/slippage are conservative defaults. Harness validation, not a 5-year backtest yet."}
       </div>

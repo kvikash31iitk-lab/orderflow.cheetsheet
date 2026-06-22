@@ -209,6 +209,21 @@ async def research_sync(req: Request, horizon: int = 5) -> dict:
 from ..research.sc1 import service as sc1_service
 from ..research.sc1 import large as sc1_large
 from ..research.sc1.config import ExitConfig, Sc1Config
+from ..research.sc1 import parquet_provider as sc1_parquet
+
+# Research data SOURCE: "live_postgres" (the live footprints/ticks tables, default — unchanged
+# behaviour) or "historical_parquet" (the read-only normalized GC.V.0 Parquet research dataset,
+# NEVER the live footprints table). Both objects expose the same footprints_minmax /
+# footprints_range / recent_ticks interface, so the SC1 job layer is untouched.
+_SC1_SOURCES = ("live_postgres", "historical_parquet")
+
+
+def _sc1_source(req: Request | None, source: str | None):
+    if source in (None, "", "live_postgres"):
+        return _pipeline(req).pg
+    if source == "historical_parquet":
+        return sc1_parquet.get_provider()
+    raise HTTPException(status_code=422, detail=f"unknown research source {source!r}; use one of {_SC1_SOURCES}")
 
 
 def _sc1_config(overrides: dict | None) -> Sc1Config:
@@ -309,10 +324,18 @@ class Sc1JobCreate(BaseModel):
     start: int | None = None
     end: int | None = None
     use5s: bool = False                   # history uses parent orderflow by default
+    source: str = "live_postgres"         # "live_postgres" | "historical_parquet" (research-only)
     config: dict = {}
     exit: dict = {}
     walkForward: Sc1WalkForward = Sc1WalkForward()
     optimize: Sc1Optimize = Sc1Optimize()
+
+
+@router.get("/research/sc1/historical/coverage")
+async def sc1_historical_coverage(symbol: str = "GC.V.0") -> dict:
+    """Coverage of the read-only historical Parquet dataset (timeframes, date span, counts).
+    Independent of the live DB; returns available=False with a note if the data dir is absent."""
+    return await sc1_parquet.get_provider().coverage(symbol)
 
 
 @router.post("/research/sc1/jobs")
@@ -320,8 +343,13 @@ async def sc1_job_create(req: Request, body: Sc1JobCreate) -> dict:
     tf = body.timeframe or settings.default_timeframe
     cfg = _sc1_config(body.config)
     exit_cfg = _exit_config(body.exit)
-    pg = _pipeline(req).pg
-    echo = {"mode": body.mode, "symbol": body.symbol.upper(), "timeframe": tf,
+    pg = _sc1_source(req, body.source)    # live footprints OR read-only historical Parquet
+    if body.source == "historical_parquet":   # shared-box guardrail: bound the scanned span
+        try:
+            sc1_parquet.check_span_days(body.start, body.end)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+    echo = {"mode": body.mode, "symbol": body.symbol.upper(), "timeframe": tf, "source": body.source,
             "start": body.start, "end": body.end, "use5s": body.use5s, "config": cfg.to_dict()}
     if body.mode == "walk_forward":
         if body.optimize.method not in ("coordinate", "grid", "random"):
