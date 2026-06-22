@@ -22,9 +22,9 @@ type View = "terminal" | "research" | "sc1lab";
 // min-w-0 lets grid items shrink below their content's min-content width (Task 4)
 function Panel({ title, children, extra }: { title: string; children: ReactNode; extra?: ReactNode }) {
   return (
-    <div className="panel flex min-h-0 min-w-0 flex-col">
+    <div className="panel flex min-h-0 min-w-0 flex-col rounded-none shadow-none">
       <div className="flex items-center justify-between border-b border-terminal-border">
-        <div className="panel-title border-b-0">{title}</div>
+        <div className="panel-title border-b-0 rounded-t-none">{title}</div>
         {extra && <div className="px-2">{extra}</div>}
       </div>
       <div className="min-h-0 flex-1">{children}</div>
@@ -101,14 +101,14 @@ export default function Dashboard() {
   // left column rows: chart always 1fr, then a splitter + the resizable panel for each
   // visible delta pane (sizes come from the persisted layout).
   const leftRows = ["1fr"];
-  if (showHist) leftRows.push("5px", `${layout.histHeight}px`);
-  if (showCum) leftRows.push("5px", `${layout.cumDeltaHeight}px`);
+  if (showHist) leftRows.push("8px", `${layout.histHeight}px`);
+  if (showCum) leftRows.push("8px", `${layout.cumDeltaHeight}px`);
 
   // main columns: chart area (minmax so it can shrink) + optional DOM + optional
   // splitter + right column. Scanner & DOM both hidden -> left spans full width.
   const cols = ["minmax(0,1fr)"];
   if (showDom) cols.push(`${layout.domColumnWidth}px`);
-  if (showScanner) cols.push("5px", `${layout.rightColumnWidth}px`);
+  if (showScanner) cols.push("8px", `${layout.rightColumnWidth}px`);
 
   return (
     <div className="flex h-full flex-col bg-terminal-bg">
@@ -130,9 +130,9 @@ export default function Dashboard() {
       ) : (
         <div className="flex min-h-0 flex-1">
           <DrawingToolbar onOpenObjects={() => setObjectsOpen(true)} />
-          <div className="grid min-h-0 flex-1 gap-1 p-1" style={{ gridTemplateColumns: cols.join(" ") }}>
+          <div className="grid min-h-0 flex-1 gap-0 p-0" style={{ gridTemplateColumns: cols.join(" ") }}>
           {/* left column: footprint + delta panels (each delta pane is drag-resizable) */}
-          <div className="grid min-h-0 min-w-0 gap-1" style={{ gridTemplateRows: leftRows.join(" ") }}>
+          <div className="grid min-h-0 min-w-0 gap-0" style={{ gridTemplateRows: leftRows.join(" ") }}>
             <Panel
               title="Footprint Chart"
               extra={
@@ -205,7 +205,7 @@ export default function Dashboard() {
 
           {/* right column: scanner + alerts (collapsible) */}
           {showScanner && (
-            <div className="grid min-h-0 min-w-0 grid-rows-[1fr_1fr] gap-1">
+            <div className="grid min-h-0 min-w-0 grid-rows-[1fr_1fr] gap-0">
               <Panel title="Order Flow Scanner">
                 <Scanner />
               </Panel>

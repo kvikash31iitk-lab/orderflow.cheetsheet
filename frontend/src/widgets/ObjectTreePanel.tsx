@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import { Anchor, Eye, EyeOff, Lock, LockOpen, X } from "lucide-react";
 import { useStore } from "../store/useStore";
 import FloatingWindow from "../components/FloatingWindow";
-import { TOOL_ICONS, VERTICAL_ROTATE } from "../drawings/toolIcons";
+import { TOOL_ICONS } from "../drawings/toolIcons";
 import { formatIstDateTime } from "../lib/time";
 
 function Section({ title, extra, children }: { title: string; extra?: ReactNode; children: ReactNode }) {
@@ -110,7 +110,7 @@ export default function ObjectTreePanel({ open, onClose }: { open: boolean; onCl
                 }`}
               >
                 <span className="flex w-4 shrink-0 justify-center text-terminal-muted">
-                  {TypeIcon && <TypeIcon size={13} className={VERTICAL_ROTATE[d.type] ? "rotate-90" : undefined} />}
+                  {TypeIcon && <TypeIcon size={13} />}
                 </span>
                 <span className={`flex-1 truncate ${d.visible ? "" : "text-terminal-muted line-through"}`} style={{ color: d.visible ? d.style.color : undefined }}>
                   {d.name}
