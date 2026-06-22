@@ -87,7 +87,8 @@ export function hitTestDrawing(
       const b = pts[1];
       return a != null && b != null && distToRay(test, a, b) <= tol;
     }
-    case "rectangle": {
+    case "rectangle":
+    case "measure": {
       const a = pts[0];
       const b = pts[1];
       if (a == null || b == null) return false;

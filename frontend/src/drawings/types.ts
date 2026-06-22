@@ -15,6 +15,7 @@ export type DrawingTool =
   | "rectangle"
   | "brush"
   | "fib-retracement"
+  | "measure"
   | "text";
 
 // a point in chart data space
@@ -66,8 +67,29 @@ export interface DrawingObject {
   meta?: Record<string, unknown>;
 }
 
-// Fibonacci retracement ratios (from point[0].price -> point[1].price).
-export const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1] as const;
+// Fibonacci levels (retracement + extension) from point[0].price -> point[1].price, each with
+// a TradingView-style tint used for its level line + the subtle band above it (low opacity, so
+// it reads on both light and dark themes). FIB_LEVELS stays as the bare ratio list (used by the
+// hit-test + any older callers); FIB_LEVELS_FULL adds per-level color.
+export interface FibLevel {
+  ratio: number;
+  color: string;
+}
+export const FIB_LEVELS_FULL: FibLevel[] = [
+  { ratio: 0, color: "#787b86" },
+  { ratio: 0.236, color: "#ef5350" },
+  { ratio: 0.382, color: "#ff9800" },
+  { ratio: 0.5, color: "#4caf50" },
+  { ratio: 0.618, color: "#26a69a" },
+  { ratio: 0.786, color: "#42a5f5" },
+  { ratio: 1, color: "#787b86" },
+  { ratio: 1.272, color: "#42a5f5" },
+  { ratio: 1.618, color: "#26a69a" },
+  { ratio: 2.618, color: "#ff9800" },
+  { ratio: 3.618, color: "#ef5350" },
+  { ratio: 4.236, color: "#b39ddb" },
+];
+export const FIB_LEVELS: number[] = FIB_LEVELS_FULL.map((l) => l.ratio);
 
 export interface DrawingToolDef {
   tool: DrawingTool;
@@ -86,7 +108,8 @@ export const DRAWING_TOOLS: DrawingToolDef[] = [
   { tool: "horizontal-line", label: "Horizontal Line", title: "Horizontal line at a price", glyph: "━", points: 1 },
   { tool: "vertical-line", label: "Vertical Line", title: "Vertical line at a time", glyph: "┃", points: 1 },
   { tool: "rectangle", label: "Rectangle", title: "Rectangle / zone — drag opposite corners", glyph: "▭", points: 2 },
-  { tool: "fib-retracement", label: "Fib Retracement", title: "Fibonacci retracement — drag the range", glyph: "ƒ", points: 2 },
+  { tool: "fib-retracement", label: "Fib Retracement", title: "Fibonacci retracement / extension — click start, then end", glyph: "ƒ", points: 2 },
+  { tool: "measure", label: "Measure", title: "Measure — price change, %, bars, time & volume between two points", glyph: "⊿", points: 2 },
   { tool: "brush", label: "Brush", title: "Freehand brush", glyph: "✎", points: 0 },
   { tool: "text", label: "Text", title: "Text label", glyph: "T", points: 1 },
 ];

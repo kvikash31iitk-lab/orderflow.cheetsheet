@@ -20,8 +20,14 @@ import type {
 } from "lightweight-charts";
 import type { CanvasRenderingTarget2D } from "fancy-canvas";
 import type { DrawingObject } from "./types";
-import { FIB_LEVELS } from "./types";
+import { FIB_LEVELS_FULL } from "./types";
 import { drawingHandles, type Px } from "./geometry";
+
+// minimal candle shape the Measure tool needs (bars count + volume between two anchor times)
+export interface CandleLite {
+  startTime: number;
+  totalVolume?: number;
+}
 
 type ChartApi = SeriesAttachedParameter<Time>["chart"];
 type SeriesApi = SeriesAttachedParameter<Time>["series"];
@@ -37,7 +43,42 @@ export interface DrawingRenderState {
   drawings: DrawingObject[]; // already filtered to current symbol + visible, draft merged in
   selectedId: string | null;
   theme: "dark" | "light";
+  candles?: CandleLite[]; // current symbol's candles (Measure tool stats)
   avwapSelection?: AvwapSelection | null;
+}
+
+// ---- formatting helpers (Measure tool) ----
+function fmtVol(v: number): string {
+  if (v >= 1e9) return `${(v / 1e9).toFixed(2)}B`;
+  if (v >= 1e6) return `${(v / 1e6).toFixed(2)}M`;
+  if (v >= 1e3) return `${(v / 1e3).toFixed(1)}K`;
+  return `${Math.round(v)}`;
+}
+function fmtElapsed(ms: number): string {
+  const m = Math.abs(ms);
+  const days = Math.floor(m / 86_400_000);
+  const hours = Math.floor((m % 86_400_000) / 3_600_000);
+  const mins = Math.floor((m % 3_600_000) / 60_000);
+  if (days >= 1) return hours ? `${days}d ${hours}h` : `${days}d`;
+  if (hours >= 1) return mins ? `${hours}h ${mins}m` : `${hours}h`;
+  return `${mins}m`;
+}
+function fmtRatio(r: number): string {
+  return Number(r.toFixed(3)).toString();
+}
+// bars + summed volume for candles whose startTime is within [t0,t1] (inclusive)
+function measureRange(candles: CandleLite[], t0: number, t1: number): { bars: number; volume: number } {
+  const lo = Math.min(t0, t1);
+  const hi = Math.max(t0, t1);
+  let bars = 0;
+  let volume = 0;
+  for (const c of candles) {
+    if (c.startTime >= lo && c.startTime <= hi) {
+      bars += 1;
+      volume += c.totalVolume ?? 0;
+    }
+  }
+  return { bars, volume };
 }
 
 function dashFor(style: DrawingObject["style"]): number[] {
@@ -98,7 +139,7 @@ class DrawingRenderer implements ISeriesPrimitivePaneRenderer {
       ctx.fillStyle = d.style.color;
       ctx.lineWidth = d.style.width;
       ctx.setLineDash(dashFor(d.style));
-      this._drawOne(ctx, size, d, toX, toY);
+      this._drawOne(ctx, size, d, toX, toY, state);
       ctx.restore();
     }
 
@@ -149,6 +190,7 @@ class DrawingRenderer implements ISeriesPrimitivePaneRenderer {
     d: DrawingObject,
     toX: (t: number) => number | null,
     toY: (p: number) => number | null,
+    state: DrawingRenderState,
   ): void {
     const p = d.points ?? [];
     switch (d.type) {
@@ -216,28 +258,114 @@ class DrawingRenderer implements ISeriesPrimitivePaneRenderer {
         return;
       }
       case "fib-retracement": {
-        const a = p[0] ? toX(p[0].time) : null;
+        const ax = p[0] ? toX(p[0].time) : null;
         const ay = p[0] ? toY(p[0].price) : null;
-        const b = p[1] ? toX(p[1].time) : null;
+        const bx = p[1] ? toX(p[1].time) : null;
         const by = p[1] ? toY(p[1].price) : null;
-        if (a == null || ay == null || b == null || by == null) return;
-        const x0 = Math.min(a, b);
-        const x1 = Math.max(a, b);
+        if (ax == null || ay == null || bx == null || by == null) return;
+        const x0 = Math.min(ax, bx);
+        const x1 = Math.max(ax, bx);
         const price0 = p[0]!.price;
         const price1 = p[1]!.price;
+        const yOf = (r: number) => ay + (by - ay) * r;
+        const priceOf = (r: number) => price0 + (price1 - price0) * r;
+        const fillOp = d.style.fillOpacity ?? 0.07;
+
+        // 1) diagonal baseline A -> B (subtle, dashed) so the swing is visible
+        ctx.save();
+        ctx.setLineDash([4, 3]);
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = withAlpha(d.style.color, 0.5);
+        ctx.beginPath();
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(bx, by);
+        ctx.stroke();
+        ctx.restore();
+
+        // 2) tinted bands between consecutive levels (low opacity -> reads on light + dark)
+        for (let i = 0; i < FIB_LEVELS_FULL.length - 1; i++) {
+          const yA = yOf(FIB_LEVELS_FULL[i].ratio);
+          const yB = yOf(FIB_LEVELS_FULL[i + 1].ratio);
+          ctx.fillStyle = withAlpha(FIB_LEVELS_FULL[i + 1].color, fillOp);
+          ctx.fillRect(x0, Math.min(yA, yB), x1 - x0, Math.abs(yB - yA));
+        }
+
+        // 3) level lines + "ratio (price)" labels at the left edge (away from the price scale)
+        ctx.setLineDash([]);
+        ctx.lineWidth = d.style.width;
         ctx.font = "10px Consolas, monospace";
         ctx.textAlign = "left";
         ctx.textBaseline = "middle";
-        for (const lvl of FIB_LEVELS) {
-          const y = ay + (by - ay) * lvl;
-          const price = price0 + (price1 - price0) * lvl;
+        const lx = Math.max(2, x0) + 4;
+        for (const lvl of FIB_LEVELS_FULL) {
+          const y = yOf(lvl.ratio);
+          ctx.strokeStyle = lvl.color;
           ctx.beginPath();
           ctx.moveTo(x0, y);
           ctx.lineTo(x1, y);
           ctx.stroke();
-          ctx.fillStyle = d.style.color;
-          ctx.fillText(`${(lvl * 100).toFixed(1)}%  ${price.toFixed(2)}`, x1 + 4, y);
+          const label = `${fmtRatio(lvl.ratio)} (${priceOf(lvl.ratio).toFixed(2)})`;
+          const w = ctx.measureText(label).width + 6;
+          ctx.fillStyle = state.theme === "light" ? "rgba(255,255,255,0.78)" : "rgba(10,14,18,0.6)";
+          ctx.fillRect(lx - 3, y - 7, w, 14);
+          ctx.fillStyle = lvl.color;
+          ctx.fillText(label, lx, y);
         }
+        return;
+      }
+      case "measure": {
+        const ax = p[0] ? toX(p[0].time) : null;
+        const ay = p[0] ? toY(p[0].price) : null;
+        const bx = p[1] ? toX(p[1].time) : null;
+        const by = p[1] ? toY(p[1].price) : null;
+        if (ax == null || ay == null || bx == null || by == null) return;
+        const pA = p[0]!.price;
+        const pB = p[1]!.price;
+        const up = pB >= pA;
+        const accent = up ? "#16c172" : "#ef4d63"; // green up / red down
+        const x = Math.min(ax, bx);
+        const y = Math.min(ay, by);
+        const w = Math.abs(bx - ax);
+        const h = Math.abs(by - ay);
+
+        // translucent direction-coloured box + dashed border
+        ctx.save();
+        ctx.fillStyle = withAlpha(accent, 0.14);
+        ctx.fillRect(x, y, w, h);
+        ctx.setLineDash([4, 3]);
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = withAlpha(accent, 0.9);
+        ctx.strokeRect(x, y, w, h);
+        // arrow A -> B through the box
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(bx, by);
+        ctx.stroke();
+        const ang = Math.atan2(by - ay, bx - ax);
+        const ah = 7;
+        ctx.beginPath();
+        ctx.moveTo(bx, by);
+        ctx.lineTo(bx - ah * Math.cos(ang - Math.PI / 6), by - ah * Math.sin(ang - Math.PI / 6));
+        ctx.moveTo(bx, by);
+        ctx.lineTo(bx - ah * Math.cos(ang + Math.PI / 6), by - ah * Math.sin(ang + Math.PI / 6));
+        ctx.stroke();
+        ctx.restore();
+
+        // stats label
+        const dp = pB - pA;
+        const pct = pA !== 0 ? (dp / pA) * 100 : 0;
+        const sign = dp >= 0 ? "+" : "";
+        const showVol = (d.meta?.showVolume ?? true) !== false;
+        const { bars, volume } = measureRange(state.candles ?? [], p[0]!.time, p[1]!.time);
+        const lines = [
+          `${sign}${dp.toFixed(2)} (${sign}${pct.toFixed(2)}%)`,
+          `${bars} bars, ${fmtElapsed(p[1]!.time - p[0]!.time)}`,
+        ];
+        if (showVol && volume > 0) lines.push(`Vol ${fmtVol(volume)}`);
+        const cx = x + w / 2;
+        const labelY = up ? y - 6 : y + h + 6;
+        this._drawStatsLabel(ctx, cx, labelY, up ? "above" : "below", lines, accent, state.theme);
         return;
       }
       case "brush": {
@@ -292,6 +420,53 @@ class DrawingRenderer implements ISeriesPrimitivePaneRenderer {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(label, width - w / 2 - 2, y);
+    ctx.restore();
+  }
+
+  private _roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  // Compact multi-line stats card (Measure tool), centred horizontally at cx and anchored
+  // above/below the box. First line uses the direction accent; the rest are muted.
+  private _drawStatsLabel(
+    ctx: CanvasRenderingContext2D,
+    cx: number,
+    anchorY: number,
+    anchor: "above" | "below",
+    lines: string[],
+    accent: string,
+    theme: "dark" | "light",
+  ): void {
+    ctx.save();
+    ctx.setLineDash([]);
+    ctx.font = "10px Outfit, system-ui, sans-serif";
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "center";
+    const lh = 13;
+    const padX = 7;
+    const padY = 5;
+    const w = Math.max(...lines.map((l) => ctx.measureText(l).width)) + padX * 2;
+    const h = lines.length * lh + padY * 2;
+    const bx = cx - w / 2;
+    const by = anchor === "above" ? anchorY - h : anchorY;
+    ctx.fillStyle = theme === "light" ? "rgba(255,255,255,0.96)" : "rgba(18,22,28,0.95)";
+    this._roundRect(ctx, bx, by, w, h, 4);
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = withAlpha(accent, 0.9);
+    this._roundRect(ctx, bx, by, w, h, 4);
+    ctx.stroke();
+    lines.forEach((l, i) => {
+      ctx.fillStyle = i === 0 ? accent : theme === "light" ? "#495057" : "#9aa7b4";
+      ctx.fillText(l, cx, by + padY + lh / 2 + i * lh);
+    });
     ctx.restore();
   }
 

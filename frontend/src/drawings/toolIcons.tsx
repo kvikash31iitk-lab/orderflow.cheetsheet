@@ -4,7 +4,7 @@
 // AlignJustify) read as chart/indicator marks rather than precise drawing tools. The cursor,
 // rectangle, brush and text reuse lucide. Every icon shares the (size, strokeWidth, className)
 // prop shape so the toolbar and the object tree render them uniformly.
-import { Brush, MousePointer2, Square, Type } from "lucide-react";
+import { Brush, MousePointer2, Ruler, Square, Type } from "lucide-react";
 import type { ReactNode } from "react";
 import type { DrawingTool } from "./types";
 
@@ -57,6 +57,8 @@ const BrushIcon: IconComp = ({ size = 18, strokeWidth = 1.7, className }) =>
   <Brush size={size} strokeWidth={strokeWidth} className={className} />;
 const TextIcon: IconComp = ({ size = 18, strokeWidth = 1.7, className }) =>
   <Type size={size} strokeWidth={strokeWidth} className={className} />;
+const MeasureIcon: IconComp = ({ size = 18, strokeWidth = 1.7, className }) =>
+  <Ruler size={size} strokeWidth={strokeWidth} className={className} />;
 
 export const TOOL_ICONS: Record<DrawingTool, IconComp> = {
   select: SelectIcon,
@@ -66,6 +68,7 @@ export const TOOL_ICONS: Record<DrawingTool, IconComp> = {
   "vertical-line": VLineIcon,
   rectangle: RectIcon,
   "fib-retracement": FibIcon,
+  measure: MeasureIcon,
   brush: BrushIcon,
   text: TextIcon,
 };

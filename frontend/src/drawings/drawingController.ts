@@ -60,6 +60,11 @@ export function createDrawingController(opts: {
 
   let draft: DrawingObject | null = null;
   let interaction: Interaction | null = null;
+  // two-click (click A -> preview -> click B) creation for 2-point tools: after the first
+  // CLICK (not a drag) `pending` holds the armed tool while the draft's 2nd point tracks the
+  // cursor until the next pointerdown finalizes it. A drag still finalizes on release as before.
+  let pending: { tool: DrawingTool } | null = null;
+  const CLICK_PX = 4; // movement under this between down+up counts as a click, not a drag
 
   // the main "Anchored VWAP" line output for a given indicator id (price pane), if any
   const avwapLineFor = (indicatorId: string) => {
@@ -89,7 +94,7 @@ export function createDrawingController(opts: {
         avwapSelection = { points: line.points, color: line.color };
       }
     }
-    return { drawings: list, selectedId: st.selectedDrawingId, theme: st.theme, avwapSelection };
+    return { drawings: list, selectedId: st.selectedDrawingId, theme: st.theme, candles: st.candles, avwapSelection };
   };
 
   const primitive = new DrawingPrimitive(provider);
@@ -247,12 +252,30 @@ export function createDrawingController(opts: {
     syncPanAndCursor();
   };
 
+  // finalize a two-click create: set the 2nd anchor at `local`, commit, clear pending+draft.
+  const finalizePending = (local: Px): void => {
+    const pend = pending;
+    const d = draft;
+    pending = null;
+    draft = null;
+    if (pend && d) {
+      const p = pxToData(local);
+      commitCreate(p ? { ...d, points: [d.points[0], p] } : d, pend.tool);
+    }
+    syncPanAndCursor();
+    requestUpdate();
+  };
+
   // ---- pointer handlers ----
   const onPointerDown = (e: PointerEvent) => {
     if (e.button !== 0 || e.pointerType === "touch") return;
+    const local = toLocal(e);
+    if (pending) {
+      finalizePending(local); // second click of a two-click create
+      return;
+    }
     const st = useStore.getState();
     const tool = st.activeTool;
-    const local = toLocal(e);
 
     if (tool === "select") {
       const sel = st.drawings.find(
@@ -291,8 +314,25 @@ export function createDrawingController(opts: {
   };
 
   const onPointerMove = (e: PointerEvent) => {
-    if (!interaction) return;
     const local = toLocal(e);
+    if (pending && draft) {
+      const p = pxToData(local);
+      if (p) {
+        draft = { ...draft, points: [draft.points[0], p] };
+        requestUpdate();
+      }
+      return;
+    }
+    if (!interaction) {
+      // select-mode hover affordance: a move cursor over a draggable object / handle
+      const st = useStore.getState();
+      if (st.activeTool === "select") {
+        const sel = st.drawings.find((d) => d.id === st.selectedDrawingId && d.symbol === st.symbol && d.visible);
+        const overHandle = !!sel && !sel.locked && sel.type !== "brush" && hitTestHandle(sel, dataToPx, local) >= 0;
+        host.style.cursor = overHandle || pickAt(local) ? "move" : "default";
+      }
+      return;
+    }
     if (interaction.kind === "creating") {
       if (!draft) return;
       const p = pxToData(local);
@@ -359,18 +399,30 @@ export function createDrawingController(opts: {
   const onPointerUp = (e: PointerEvent) => {
     if (!interaction) return;
     const inter = interaction;
+    const upLocal = toLocal(e);
     try {
       host.releasePointerCapture(e.pointerId);
     } catch {
       /* capture may already be released */
     }
     interaction = null;
-    const d = draft;
-    draft = null;
     if (inter.kind === "creating") {
+      // a CLICK (barely moved) on a 2-point tool arms the two-click flow instead of committing;
+      // a real drag still finalizes here as before.
+      if (draft && pointsForTool(inter.tool) === 2 && dist(upLocal, inter.lastPx) < CLICK_PX) {
+        pending = { tool: inter.tool };
+        requestUpdate();
+        return;
+      }
+      const d = draft;
+      draft = null;
       if (d) commitCreate(d, inter.tool);
-    } else if (d && (inter.kind === "moving" || inter.kind === "resizing")) {
-      useStore.getState().updateDrawing(d.id, { points: d.points, path: d.path });
+    } else {
+      const d = draft;
+      draft = null;
+      if (d && (inter.kind === "moving" || inter.kind === "resizing")) {
+        useStore.getState().updateDrawing(d.id, { points: d.points, path: d.path });
+      }
     }
     syncPanAndCursor();
     requestUpdate();
@@ -400,8 +452,9 @@ export function createDrawingController(opts: {
 
     const st = useStore.getState();
     if (e.key === "Escape") {
-      if (interaction) {
+      if (interaction || pending) {
         interaction = null;
+        pending = null;
         draft = null;
       }
       if (st.activeTool !== "select") useStore.getState().setActiveTool("select");
@@ -422,7 +475,13 @@ export function createDrawingController(opts: {
 
   // ---- repaint + pan-sync when relevant store slices change ----
   const unsub = useStore.subscribe((s, prev) => {
-    if (s.activeTool !== prev.activeTool || s.symbol !== prev.symbol) syncPanAndCursor();
+    if (s.activeTool !== prev.activeTool || s.symbol !== prev.symbol) {
+      if (pending) {
+        pending = null; // cancel an armed two-click when the tool/symbol changes
+        draft = null;
+      }
+      syncPanAndCursor();
+    }
     if (
       s.drawings !== prev.drawings ||
       s.selectedDrawingId !== prev.selectedDrawingId ||
