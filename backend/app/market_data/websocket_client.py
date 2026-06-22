@@ -431,7 +431,7 @@ class MarketDataClient:
 
     async def get_history(self, symbol: str, duration: str = "1 D", bar_size: str = "tick") -> list[dict]:
         sym = symbol.upper()
-        if sym in self.cfg.databento_symbols_list:
+        if sym in self.cfg.databento_symbols_list or sym in self.cfg.databento_display_symbols_list:
             self.active_source = "databento"
             return await self.databento_client.get_history(sym, duration, bar_size)
         else:
@@ -467,4 +467,3 @@ class MarketDataClient:
 
     async def _on_databento_tick(self, tick: dict) -> None:
         await self.on_tick(tick)
-

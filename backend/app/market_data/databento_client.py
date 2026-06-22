@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+import re
 import threading
 import time
 from dataclasses import dataclass, field
@@ -54,6 +55,7 @@ _SIM_TICK = {
     "GC.V.0": 0.10,
 }
 _SIM_DEFAULT_BASE = 100.0
+_CME_RAW_FUTURE_RE = re.compile(r"^(?:6E|GC)[FGHJKMNQUVXZ]\d$", re.IGNORECASE)
 
 
 @dataclass
@@ -106,6 +108,8 @@ def resolve_databento_symbol(symbol: str) -> tuple[str, str]:
         or ".FUT" in sym
     ):
         return "GLBX.MDP3", "continuous"
+    if _CME_RAW_FUTURE_RE.fullmatch(sym):
+        return "GLBX.MDP3", "raw_symbol"
     return "DBEQ.BASIC", "raw_symbol"
 
 
@@ -120,14 +124,18 @@ class DatabentoClient:
         cfg: Optional[Settings] = None,
     ) -> None:
         self.cfg = cfg or default_settings
-        self.symbols = [s.upper() for s in (symbols or self.cfg.symbols)]
+        self.subscribe_symbols = [s.upper() for s in (symbols or self.cfg.databento_symbols_list)]
+        aliases = getattr(self.cfg, "databento_symbol_alias_map", {})
+        self._sub_to_display = {s: aliases.get(s, s).upper() for s in self.subscribe_symbols}
+        self._display_to_sub = {display: sub for sub, display in self._sub_to_display.items()}
+        self.symbols = list(dict.fromkeys(self._sub_to_display.values()))
         self.on_tick = on_tick
         self.status = ConnectionStatus(symbols=self.symbols)
 
         # Databento API key
         self.api_key = getattr(self.cfg, "databento_api_key", "")
 
-        self.live_clients: dict[str, db.Live] = {}
+        self.live_clients: dict[tuple[str, str], db.Live] = {}
         # Tick queue + the main event loop, both bound in start() on the running loop.
         # The SDK callback runs on Databento's background thread and hands records to
         # this loop via loop.call_soon_threadsafe (see _cb) - a plain thread queue +
@@ -142,7 +150,7 @@ class DatabentoClient:
         self._sim_symbols: list[str] = []
         # datasets that timed out mid-connect; a late SDK session for one of these
         # must NOT feed the queue (would mix real ticks into the simulated feed).
-        self._abandoned_datasets: set[str] = set()
+        self._abandoned_datasets: set[tuple[str, str]] = set()
         # serialises the connect-vs-timeout race across threads: the executor thread's
         # "is this dataset abandoned? if not, register the live client" must be atomic
         # w.r.t. the event loop's "mark abandoned + reclaim any registered client".
@@ -199,25 +207,23 @@ class DatabentoClient:
         loop = asyncio.get_running_loop()
 
         # Group symbols by dataset so we only connect to the gateways we need.
-        symbols_by_dataset: dict[str, list[str]] = {}
-        stype_by_dataset: dict[str, str] = {}
-        for sym in self.symbols:
+        symbols_by_stream: dict[tuple[str, str], list[str]] = {}
+        for sym in self.subscribe_symbols:
             dataset, stype_in = resolve_databento_symbol(sym)
-            symbols_by_dataset.setdefault(dataset, []).append(sym)
-            stype_by_dataset[dataset] = stype_in
+            symbols_by_stream.setdefault((dataset, stype_in), []).append(sym)
 
         timeout_s = getattr(self.cfg, "truedata_connect_timeout_s", 20.0)
         self._sim_symbols = []
 
-        for dataset, syms in symbols_by_dataset.items():
-            stype_in = stype_by_dataset[dataset]
+        for stream_key, syms in symbols_by_stream.items():
+            dataset, stype_in = stream_key
             log.info("Connecting to Databento Live gateway for %s with symbols %s", dataset, syms)
 
             # default args bind the per-iteration values into the executor closure.
-            def _connect_one(ds=dataset, s=syms, st=stype_in) -> bool:
+            def _connect_one(ds=dataset, s=syms, st=stype_in, key=stream_key) -> bool:
                 # if this dataset already timed out and we fell back, don't attach a
                 # late session that would double-feed the queue.
-                if ds in self._abandoned_datasets:
+                if key in self._abandoned_datasets:
                     return False
                 try:
                     client = db.Live(key=self.api_key)
@@ -230,7 +236,7 @@ class DatabentoClient:
                         # main event loop via call_soon_threadsafe, which WAKES uvicorn's
                         # loop (a plain thread queue + 2ms poll silently delivered nothing
                         # here). _cb_count gives delivery visibility.
-                        if _ds in self._abandoned_datasets:
+                        if key in self._abandoned_datasets:
                             return
                         self._cb_count += 1
                         loop = self._main_loop
@@ -244,7 +250,7 @@ class DatabentoClient:
                     client.add_callback(_cb)
                     # fast-path bail if already abandoned before the (blocking) start();
                     # the authoritative re-check happens under the lock below.
-                    if ds in self._abandoned_datasets:
+                    if key in self._abandoned_datasets:
                         try:
                             client.stop()
                         except Exception:  # pragma: no cover - SDK best effort
@@ -257,9 +263,9 @@ class DatabentoClient:
                     # Registering anyway would leak a metered live session and make the
                     # symbol report as BOTH live and simulated.
                     with self._connect_lock:
-                        registered = ds not in self._abandoned_datasets
+                        registered = key not in self._abandoned_datasets
                         if registered:
-                            self.live_clients[ds] = client
+                            self.live_clients[key] = client
                     if not registered:
                         try:
                             client.stop()
@@ -282,8 +288,8 @@ class DatabentoClient:
                 # mark abandoned AND reclaim any client the executor thread registered
                 # in the race window, atomically w.r.t. the thread's register step.
                 with self._connect_lock:
-                    self._abandoned_datasets.add(dataset)
-                    leaked = self.live_clients.pop(dataset, None)
+                    self._abandoned_datasets.add(stream_key)
+                    leaked = self.live_clients.pop(stream_key, None)
                 if leaked is not None:
                     try:
                         leaked.stop()
@@ -296,7 +302,7 @@ class DatabentoClient:
                 ok = False
 
             if not ok:
-                self._sim_symbols.extend(syms)
+                self._sim_symbols.extend(self._sub_to_display.get(s, s) for s in syms)
 
         if not self.live_clients:
             # nothing connected live: let start() run the full-simulator fallback so
@@ -306,10 +312,10 @@ class DatabentoClient:
 
         # Partial or full live success.
         live_symbols = [
-            s
-            for ds in self.live_clients
-            if ds not in self._abandoned_datasets
-            for s in symbols_by_dataset.get(ds, [])
+            self._sub_to_display.get(s, s)
+            for stream_key in self.live_clients
+            if stream_key not in self._abandoned_datasets
+            for s in symbols_by_stream.get(stream_key, [])
         ]
         self.status.state = "connected"
         self.status.source = "databento"
@@ -392,6 +398,8 @@ class DatabentoClient:
             if not dataset and isinstance(record, dict):
                 self.status.last_tick_ms = record["timestamp"]
                 self.status.tick_count += 1
+                if self.status.source == "databento":
+                    self.status.state = "connected"
                 try:
                     await self.on_tick(record)
                 except Exception:
@@ -407,7 +415,8 @@ class DatabentoClient:
                     instrument_id = getattr(record, "instrument_id", None)
                     stype_in_symbol = getattr(record, "stype_in_symbol", None)
                     if instrument_id is not None and stype_in_symbol:
-                        self._symbol_map[instrument_id] = stype_in_symbol.upper()
+                        sub_symbol = str(stype_in_symbol).upper()
+                        self._symbol_map[instrument_id] = self._sub_to_display.get(sub_symbol, sub_symbol)
                     continue
 
                 # Parse trade / MBP1 messages
@@ -456,6 +465,8 @@ class DatabentoClient:
 
             self.status.last_tick_ms = ts_ms
             self.status.tick_count += 1
+            if self.status.source == "databento":
+                self.status.state = "connected"
             try:
                 await self.on_tick(raw_tick)
             except Exception:
@@ -508,7 +519,9 @@ class DatabentoClient:
         end_dt = datetime.utcnow()
         start_dt = end_dt - delta
 
-        dataset, stype_in = resolve_databento_symbol(symbol)
+        request_symbol = self._display_to_sub.get(symbol.upper(), symbol.upper())
+        dataset, stype_in = resolve_databento_symbol(request_symbol)
+        display_symbol = self._sub_to_display.get(request_symbol, symbol.upper())
         loop = asyncio.get_running_loop()
 
         def _fetch():
@@ -518,7 +531,7 @@ class DatabentoClient:
                     dataset=dataset,
                     start=start_dt.isoformat(),
                     end=end_dt.isoformat(),
-                    symbols=symbol,
+                    symbols=request_symbol,
                     stype_in=stype_in,
                     schema="tbbo",
                 )
@@ -555,7 +568,7 @@ class DatabentoClient:
                     ask_val = float(ask_px) * 1e-9
 
             out.append({
-                "symbol": symbol.upper(),
+                "symbol": display_symbol,
                 "timestamp": ts_ms,
                 "price": price_val,
                 "volume": vol_val,

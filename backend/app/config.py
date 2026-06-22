@@ -87,6 +87,11 @@ class Settings(BaseSettings):
     # --- Databento ---
     databento_api_key: str = ""
     databento_symbols: str = "6E.v.0,GC.v.0"
+    # Optional subscription-symbol -> display-symbol aliases. This lets us subscribe
+    # to an explicitly active raw CME contract (e.g. GCQ6) while keeping the app's
+    # stable continuous display symbol (GC.V.0) when Databento's live continuous map
+    # lags or points at a stale contract.
+    databento_symbol_aliases: str = ""
 
     # --- PostgreSQL ---
     postgres_host: str = "localhost"
@@ -155,8 +160,7 @@ class Settings(BaseSettings):
     @property
     def symbols(self) -> list[str]:
         td_syms = [s.strip().upper() for s in self.truedata_symbols.split(",") if s.strip()]
-        db_syms = [s.strip().upper() for s in self.databento_symbols.split(",") if s.strip()]
-        return td_syms + db_syms
+        return td_syms + self.databento_display_symbols_list
 
     @property
     def truedata_symbols_list(self) -> list[str]:
@@ -165,6 +169,37 @@ class Settings(BaseSettings):
     @property
     def databento_symbols_list(self) -> list[str]:
         return [s.strip().upper() for s in self.databento_symbols.split(",") if s.strip()]
+
+    @property
+    def databento_symbol_alias_map(self) -> dict[str, str]:
+        aliases: dict[str, str] = {}
+        for item in self.databento_symbol_aliases.split(","):
+            part = item.strip()
+            if not part:
+                continue
+            if ":" in part:
+                src, dst = part.split(":", 1)
+            elif "=" in part:
+                src, dst = part.split("=", 1)
+            else:
+                continue
+            src = src.strip().upper()
+            dst = dst.strip().upper()
+            if src and dst:
+                aliases[src] = dst
+        return aliases
+
+    @property
+    def databento_display_symbols_list(self) -> list[str]:
+        aliases = self.databento_symbol_alias_map
+        out: list[str] = []
+        seen: set[str] = set()
+        for sym in self.databento_symbols_list:
+            display = aliases.get(sym, sym).upper()
+            if display not in seen:
+                out.append(display)
+                seen.add(display)
+        return out
 
     @property
     def cors_origin_list(self) -> list[str]:
