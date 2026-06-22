@@ -74,6 +74,10 @@ class ConnectionStatus:
 
     def to_dict(self) -> dict:
         now = int(time.time() * 1000)
+        # A "No ticks recently…" warning is contradictory once we're back to connected; never
+        # surface it while state=="connected" (a genuine stall flips state to "reconnecting",
+        # which still shows the message — so this clears stale text without masking real stalls).
+        message = "" if (self.state == "connected" and self.message.startswith("No ticks recently")) else self.message
         return {
             "state": self.state,
             "source": self.source,
@@ -84,7 +88,7 @@ class ConnectionStatus:
             "tickCount": self.tick_count,
             "connectedSinceMs": self.connected_since_ms,
             "staleMs": (now - self.last_tick_ms) if self.last_tick_ms else None,
-            "message": self.message,
+            "message": message,
         }
 
 
@@ -491,6 +495,10 @@ class DatabentoClient:
                 log.warning(self.status.message)
             elif self.status.last_tick_ms:
                 self.status.state = "connected"
+                # ticks are flowing again -> don't leave the stale reconnect warning behind
+                # (otherwise /api/status shows state=connected with an old "No ticks recently" msg)
+                if self.status.message.startswith("No ticks recently"):
+                    self.status.message = ""
 
     async def get_history(self, symbol: str, duration: str = "1 D", bar_size: str = "tick") -> list[dict]:
         """Historical snapshot fetch via Databento Historical API."""

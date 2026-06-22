@@ -1,6 +1,19 @@
 from app.config import Settings
-from app.market_data.databento_client import DatabentoClient, resolve_databento_symbol
+from app.market_data.databento_client import ConnectionStatus, DatabentoClient, resolve_databento_symbol
 from app.market_data.websocket_client import MarketDataClient
+
+
+def test_status_clears_stale_reconnect_message_once_connected():
+    """A stale 'No ticks recently…' warning must not surface while state==connected, but must
+    still show while reconnecting, and a normal healthy message must be preserved."""
+    s = ConnectionStatus(source="databento", last_tick_ms=1)
+    s.state = "reconnecting"
+    s.message = "No ticks recently; Databento reconnect in progress."
+    assert s.to_dict()["message"].startswith("No ticks recently")   # shown while genuinely reconnecting
+    s.state = "connected"
+    assert s.to_dict()["message"] == ""                              # cleared once connected + fresh
+    s.message = "Databento Live: 2 live, 0 simulated"
+    assert s.to_dict()["message"] == "Databento Live: 2 live, 0 simulated"  # healthy msg preserved
 
 
 async def _noop(_raw):
