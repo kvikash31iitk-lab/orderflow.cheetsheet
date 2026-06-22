@@ -46,8 +46,13 @@ services:
     environment:
       POSTGRES_HOST: postgres
       REDIS_HOST: redis
+      # SC1 research-only historical Parquet source (read-only; never the live footprints table)
+      SC1_RESEARCH_DATA_DIR: ${SC1_RESEARCH_DATA_DIR:-/root/orderflow_research_data/gc}
     volumes:
       - tickdata:/data/ticks
+      # bind-mount the normalized GC.V.0 research dataset READ-ONLY so the historical_parquet
+      # provider can read it inside the container (host path == container path, var-driven)
+      - ${SC1_RESEARCH_DATA_DIR:-/root/orderflow_research_data/gc}:${SC1_RESEARCH_DATA_DIR:-/root/orderflow_research_data/gc}:ro
     ports:
       - "127.0.0.1:8102:8000"   # localhost only; fronted by host nginx
     depends_on:
