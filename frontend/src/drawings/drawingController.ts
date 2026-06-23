@@ -155,7 +155,13 @@ export function createDrawingController(opts: {
   const drawingActive = () => useStore.getState().activeTool !== "select" || interaction != null;
   const syncPanAndCursor = () => {
     const enabled = !drawingActive();
-    chart.applyOptions({ handleScroll: enabled, handleScale: enabled });
+    // Keep native mouse-WHEEL zoom OFF whenever we re-enable scaling: the footprint chart
+    // owns wheel zoom via a smooth custom handler (see wheelZoom.ts). Passing the boolean
+    // `handleScale: true` here would resurrect LWC's discrete wheel zoom and double-fire it.
+    chart.applyOptions({
+      handleScroll: enabled,
+      handleScale: enabled ? { mouseWheel: false, pinch: true, axisPressedMouseMove: true } : false,
+    });
     host.style.cursor = useStore.getState().activeTool !== "select" ? "crosshair" : "default";
   };
 
@@ -516,7 +522,11 @@ export function createDrawingController(opts: {
       } catch {
         /* series/chart may already be disposed */
       }
-      chart.applyOptions({ handleScroll: true, handleScale: true });
+      // restore scroll/scale but keep wheel zoom off (owned by the custom handler)
+      chart.applyOptions({
+        handleScroll: true,
+        handleScale: { mouseWheel: false, pinch: true, axisPressedMouseMove: true },
+      });
     },
   };
 }
