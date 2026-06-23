@@ -13,7 +13,6 @@ import { lwcTheme } from "../lib/chartTheme";
 import { registerChart, unregisterChart } from "../lib/chartSync";
 import { Crosshair, Pencil } from "lucide-react";
 import { createDrawingController } from "../drawings/drawingController";
-import { createWheelZoom } from "./wheelZoom";
 import { toolDef } from "../drawings/types";
 import DrawingSelectionToolbar from "../widgets/DrawingSelectionToolbar";
 import AvwapSelectionToolbar from "../widgets/AvwapSelectionToolbar";
@@ -64,9 +63,6 @@ export default function FootprintChart() {
       ...lwcTheme(s.theme),
       crosshair: { mode: CrosshairMode.Normal },
       timeScale: { ...lwcTheme(s.theme).timeScale, barSpacing: 110, rightOffset: 4 },
-      // native wheel zoom is replaced by the smooth, cursor-anchored controller below;
-      // keep axis-drag scaling + pinch (their defaults) intact.
-      handleScale: { mouseWheel: false },
     });
     const series = chart.addCustomSeries<FootprintData, FootprintSeriesOptions>(new FootprintSeriesView(), {
       displayMode: s.footprintMode,
@@ -86,9 +82,6 @@ export default function FootprintChart() {
     // handlers to the chart host (create / select / move / resize / delete). Disables
     // chart pan while a tool is armed or a gesture is in progress; restores it after.
     const drawingController = createDrawingController({ host: hostRef.current, chart, series });
-
-    // smooth, cursor-anchored wheel zoom (replaces LWC's discrete built-in wheel step)
-    const wheelZoom = createWheelZoom({ host: hostRef.current, chart });
 
     // click-to-anchor: acts only while a placement mode is active. Two modes:
     //  - pendingAnchorTool "anchored-vwap": CREATE a new AVWAP at the clicked candle.
@@ -131,7 +124,6 @@ export default function FootprintChart() {
 
     return () => {
       chart.unsubscribeClick(onChartClick);
-      wheelZoom.dispose();
       drawingController.dispose();
       unregisterChart("main");
       entryLineRef.current = null;
