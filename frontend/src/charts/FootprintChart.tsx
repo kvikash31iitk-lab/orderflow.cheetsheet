@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   createChart,
   CrosshairMode,
@@ -17,6 +17,7 @@ import { toolDef } from "../drawings/types";
 import DrawingSelectionToolbar from "../widgets/DrawingSelectionToolbar";
 import AvwapSelectionToolbar from "../widgets/AvwapSelectionToolbar";
 import IndicatorLegend from "../widgets/IndicatorLegend";
+import FootprintContextMenu from "../dashboard/FootprintContextMenu";
 import {
   DARK_PALETTE,
   LIGHT_PALETTE,
@@ -53,6 +54,8 @@ export default function FootprintChart() {
   const activeTool = useStore((s) => s.activeTool);
   const setActiveTool = useStore((s) => s.setActiveTool);
   const lastSymbolRef = useRef(symbol);
+  // right-click footprint context menu (cursor position, or null when closed)
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
 
   // init the chart + custom series once
   useEffect(() => {
@@ -212,7 +215,14 @@ export default function FootprintChart() {
   }, [positions, symbol, theme]);
 
   return (
-    <div className="relative h-full w-full">
+    <div
+      className="relative h-full w-full"
+      onContextMenu={(e) => {
+        // open OUR menu only inside the chart area; right-click elsewhere keeps the browser menu
+        e.preventDefault();
+        setCtxMenu({ x: e.clientX, y: e.clientY });
+      }}
+    >
       <div ref={hostRef} data-testid="footprint-chart" className="absolute inset-0" />
       {candles.length === 0 && (
         // loading / empty overlay so a large snapshot (deep history can be slow to
@@ -258,6 +268,7 @@ export default function FootprintChart() {
           </div>
         </div>
       )}
+      {ctxMenu && <FootprintContextMenu x={ctxMenu.x} y={ctxMenu.y} onClose={() => setCtxMenu(null)} />}
     </div>
   );
 }

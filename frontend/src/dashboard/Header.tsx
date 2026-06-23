@@ -59,7 +59,10 @@ export default function Header() {
   const avwapCount = useStore((s) => s.indicators.filter((i) => i.kind === "anchored-vwap").length);
   const [symbols, setSymbols] = useState<string[]>(["NIFTY-I", "BANKNIFTY-I", "FINNIFTY-I", "MIDCPNIFTY-I"]);
   const [tfs, setTfs] = useState<string[]>(DEFAULT_TFS);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  // footprint Settings modal open state lives in the store so the chart right-click menu
+  // can also open it; the top-toolbar gear still drives it exactly as before.
+  const settingsOpen = useStore((s) => s.footprintSettingsOpen);
+  const setFootprintSettingsOpen = useStore((s) => s.setFootprintSettingsOpen);
   // ƒx panel open state lives in the store so the on-chart indicator legend / context
   // menu can also open it ("Manage indicators").
   const indicatorsOpen = useStore((s) => s.indicatorsPanelOpen);
@@ -199,7 +202,7 @@ export default function Header() {
       </button>
 
       <button
-        onClick={() => setSettingsOpen(true)}
+        onClick={() => setFootprintSettingsOpen(true)}
         title="Footprint settings"
         className="rounded border border-terminal-border bg-terminal-bg px-2 py-1 text-sm hover:bg-terminal-border"
       >
@@ -253,7 +256,7 @@ export default function Header() {
         <ConnectionStatus />
       </div>
     </header>
-    <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+    <SettingsModal open={settingsOpen} onClose={() => setFootprintSettingsOpen(false)} />
     <IndicatorsPanel open={indicatorsOpen} onClose={() => setIndicatorsOpen(false)} />
     </>
   );

@@ -455,6 +455,7 @@ interface State {
   // indicator-management UI (TradingView-style): the ƒx panel + the per-indicator
   // Settings / Source-code dialogs (each holds the target instance id, null = closed).
   indicatorsPanelOpen: boolean;
+  footprintSettingsOpen: boolean; // footprint Settings modal (gear + chart right-click)
   settingsIndicatorId: string | null;
   sourceIndicatorId: string | null;
 
@@ -509,6 +510,7 @@ interface State {
   removeAllAnchoredVwaps: () => void;
   // indicator-management UI actions (legend / context menu / dialogs)
   setIndicatorsPanelOpen: (open: boolean) => void;
+  setFootprintSettingsOpen: (open: boolean) => void;
   setSettingsIndicatorId: (id: string | null) => void;
   setSourceIndicatorId: (id: string | null) => void;
   moveIndicator: (id: string, dir: -1 | 1) => void;
@@ -583,6 +585,7 @@ export const useStore = create<State>((set, get) => ({
   pendingAnchorIndicatorId: null,
   pendingAnchorTool: null,
   indicatorsPanelOpen: false,
+  footprintSettingsOpen: false,
   settingsIndicatorId: null,
   sourceIndicatorId: null,
 
@@ -953,6 +956,7 @@ export const useStore = create<State>((set, get) => ({
 
   // ----- indicator-management UI (legend / context menu / dialogs) -----
   setIndicatorsPanelOpen: (open) => set({ indicatorsPanelOpen: open }),
+  setFootprintSettingsOpen: (open) => set({ footprintSettingsOpen: open }),
   setSettingsIndicatorId: (id) => set({ settingsIndicatorId: id }),
   setSourceIndicatorId: (id) => set({ sourceIndicatorId: id }),
 
