@@ -18,6 +18,10 @@ const MAX_BAR_SPACING = 240; // fully zoomed in -> large, very readable footprin
 const SENSITIVITY = 0.0022; // normalized wheel delta -> zoom exponent
 const EASE = 0.28; // per-frame approach to the target (0..1); higher = snappier
 const MAX_STEP_DELTA = 60; // clamp one normalized wheel delta (tames trackpad spikes)
+// --- anchor-correction stabilizers (kill the micro-shake at higher sensitivity) ---
+const SNAP_EPS = 0.12; // stop easing once within this many px/bar of target (was 0.05)
+const ANCHOR_DEADZONE_PX = 1; // skip sub-pixel re-anchors that flip-flop ±1px -> vibration
+const MAX_CORRECTION_BARS = 3; // cap one frame's scroll correction so it can't overshoot
 
 export interface WheelZoomController {
   dispose(): void;
@@ -45,17 +49,25 @@ export function createWheelZoom({ host, chart }: { host: HTMLElement; chart: ICh
     raf = 0;
     const cur = ts.options().barSpacing || target;
     let next = cur + (target - cur) * EASE;
-    if (Math.abs(target - next) < 0.05) next = target;
+    if (Math.abs(target - next) < SNAP_EPS) next = target;
     next = clampBS(next);
     ts.applyOptions({ barSpacing: next });
 
     // re-anchor: scroll so the logical index that was under the cursor lands back at the
     // same x. Increasing scrollPosition shifts content left (a logical's x decreases), so
     // the correction is (x2 - anchorX) / barSpacing bars.
+    //   - DEADZONE: dx is the *cumulative* drift of the fixed anchor from the cursor, so
+    //     skipping |dx| <= 1px bounds total drift to a pixel while removing the per-frame
+    //     ±1px flip-flop that read as vibration.
+    //   - CLAMP: a single frame can never scroll-correct by more than a few bars (overshoot).
     if (anchorLogical != null && next > 0) {
       const x2 = ts.logicalToCoordinate(anchorLogical);
       if (x2 != null) {
-        ts.scrollToPosition(ts.scrollPosition() + (x2 - anchorX) / next, false);
+        const dx = x2 - anchorX;
+        if (Math.abs(dx) > ANCHOR_DEADZONE_PX) {
+          const corr = Math.max(-MAX_CORRECTION_BARS, Math.min(MAX_CORRECTION_BARS, dx / next));
+          ts.scrollToPosition(ts.scrollPosition() + corr, false);
+        }
       }
     }
 
