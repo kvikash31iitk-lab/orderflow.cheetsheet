@@ -15,7 +15,7 @@ import type { IChartApi, Logical } from "lightweight-charts";
 
 const MIN_BAR_SPACING = 2; // fully zoomed out -> renderer falls back to candlesticks
 const MAX_BAR_SPACING = 240; // fully zoomed in -> large, very readable footprint cells
-const SENSITIVITY = 0.0016; // normalized wheel delta -> zoom exponent
+const SENSITIVITY = 0.0022; // normalized wheel delta -> zoom exponent
 const EASE = 0.28; // per-frame approach to the target (0..1); higher = snappier
 const MAX_STEP_DELTA = 60; // clamp one normalized wheel delta (tames trackpad spikes)
 
