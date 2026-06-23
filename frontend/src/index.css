@@ -8,16 +8,22 @@
 :root {
   --terminal-bg: 11 14 17;        /* #0b0e11 */
   --terminal-panel: 18 22 28;     /* #12161c */
+  --terminal-elevated: 25 30 38;  /* #191e26 — menus / dialogs sit above panels */
   --terminal-border: 31 38 48;    /* #1f2630 */
+  --terminal-border-strong: 45 54 67; /* #2d3643 */
   --terminal-text: 199 208 219;   /* #c7d0db */
   --terminal-muted: 107 119 133;  /* #6b7785 */
+  --accent: 47 129 247;           /* #2f81f7 */
 }
 html.light {
-  --terminal-bg: 248 249 250;     /* #f8f9fa */
+  --terminal-bg: 245 247 249;     /* #f5f7f9 */
   --terminal-panel: 255 255 255;  /* #ffffff */
-  --terminal-border: 222 226 230; /* #dee2e6 */
-  --terminal-text: 33 37 41;      /* #212529 */
-  --terminal-muted: 108 117 125;  /* #6c757d */
+  --terminal-elevated: 255 255 255;
+  --terminal-border: 224 228 233; /* #e0e4e9 */
+  --terminal-border-strong: 203 210 217; /* #cbd2d9 */
+  --terminal-text: 28 33 40;      /* #1c2128 */
+  --terminal-muted: 110 119 129;  /* #6e7781 */
+  --accent: 25 103 224;           /* #1967e0 — a touch deeper for contrast on white */
 }
 
 html,
@@ -51,13 +57,56 @@ body {
 
 @layer components {
   .panel {
-    @apply bg-terminal-panel/95 backdrop-blur-md border border-terminal-border rounded-lg shadow-xl shadow-black/40 transition-all duration-200;
+    @apply bg-terminal-panel border border-terminal-border rounded-md shadow-lg shadow-black/20 transition-colors duration-150;
   }
   .panel-title {
-    @apply text-[11px] uppercase tracking-wider font-semibold text-terminal-muted px-3 py-2 border-b border-terminal-border bg-terminal-bg/40 rounded-t-lg;
+    @apply text-[10.5px] uppercase tracking-[0.08em] font-semibold text-terminal-muted px-3 py-1.5 border-b border-terminal-border bg-terminal-bg/30;
   }
   .stat-chip {
-    @apply px-2.5 py-1 rounded-md text-xs font-semibold shadow-inner;
+    @apply px-2.5 py-1 rounded-md text-xs font-semibold;
+  }
+
+  /* ---- compact institutional controls (consistent 28px height, 6px radius) ---- */
+  .tbtn {
+    @apply inline-flex h-7 select-none items-center gap-1.5 rounded-md border border-terminal-border bg-terminal-bg/60 px-2.5 text-[12px] font-medium text-terminal-text transition-colors hover:border-terminal-border-strong hover:bg-terminal-border/40 disabled:cursor-not-allowed disabled:opacity-40;
+  }
+  .tbtn-icon {
+    @apply inline-flex h-7 w-7 select-none items-center justify-center rounded-md border border-terminal-border bg-terminal-bg/60 text-terminal-muted transition-colors hover:border-terminal-border-strong hover:bg-terminal-border/40 hover:text-terminal-text disabled:cursor-not-allowed disabled:opacity-40;
+  }
+  .tbtn-on {
+    @apply border-accent/40 bg-accent/15 text-accent hover:border-accent/50 hover:bg-accent/20 hover:text-accent;
+  }
+  .tsel {
+    @apply h-7 cursor-pointer appearance-none rounded-md border border-terminal-border bg-terminal-bg/60 pl-2.5 pr-7 text-[12px] font-medium text-terminal-text transition-colors hover:border-terminal-border-strong focus:border-accent focus:outline-none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7785' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 0.55rem center;
+  }
+  .tinput {
+    @apply h-7 rounded-md border border-terminal-border bg-terminal-bg/60 px-2 text-right text-[12px] font-mono tabular-nums text-terminal-text transition-colors focus:border-accent focus:outline-none;
+  }
+  .seg {
+    @apply inline-flex h-7 items-center gap-0.5 rounded-md border border-terminal-border bg-terminal-bg/60 p-0.5;
+  }
+  .seg-item {
+    @apply inline-flex h-full items-center rounded px-2 text-[11px] font-medium text-terminal-muted transition-colors hover:text-terminal-text;
+  }
+  .seg-item-on {
+    @apply bg-accent text-white hover:text-white;
+  }
+  /* on/off pill switch (label-driven) */
+  .switch {
+    @apply relative inline-flex h-[18px] w-[30px] shrink-0 cursor-pointer items-center rounded-full border border-terminal-border bg-terminal-border/50 transition-colors;
+  }
+  .switch[data-on="true"] {
+    @apply border-accent/50 bg-accent;
+  }
+  .switch::after {
+    content: "";
+    @apply absolute left-[2px] h-[12px] w-[12px] rounded-full bg-terminal-muted transition-transform;
+  }
+  .switch[data-on="true"]::after {
+    @apply translate-x-[12px] bg-white;
   }
   
   /* Premium Trading Control buttons */

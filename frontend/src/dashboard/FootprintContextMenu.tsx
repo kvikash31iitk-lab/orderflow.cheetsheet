@@ -8,7 +8,7 @@ import type { FootprintColorMatrix, FootprintColumns, FootprintSettings } from "
 import { FOOTPRINT_PRESETS } from "./footprintPresets";
 
 const menuCls =
-  "min-w-[188px] overflow-auto rounded-md border border-terminal-border bg-terminal-panel py-1 shadow-2xl shadow-black/50";
+  "min-w-[190px] overflow-auto rounded-md border border-terminal-border-strong bg-terminal-elevated py-1 shadow-xl shadow-black/40";
 const rowCls = "flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs";
 
 function Item({

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useStore } from "../store/useStore";
 import {
   FOOTPRINT_TEXT_FORMATS,
@@ -11,75 +11,89 @@ import {
 import FloatingWindow from "../components/FloatingWindow";
 import { FOOTPRINT_PRESETS } from "./footprintPresets";
 
-// ---- compact building blocks (institutional rows, no bulky cards) ----
-const selCls =
-  "rounded border border-terminal-border bg-terminal-bg px-1.5 py-0.5 text-[11px] text-terminal-text focus:outline-none focus:border-flow-delta";
-
-function Section({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
+// ---- compact inspector building blocks ----
+function Field({ label, children, disabled, tip }: { label: string; children: ReactNode; disabled?: boolean; tip?: string }) {
   return (
-    <div className="mt-3 first:mt-0">
-      <div className="mb-1 flex items-center gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-terminal-muted">{title}</span>
-        <div className="h-px flex-1 bg-terminal-border" />
-      </div>
-      {note && <p className="mb-1 text-[10px] leading-tight text-terminal-muted/70">{note}</p>}
-      <div className="space-y-1">{children}</div>
+    <div title={tip} className={`flex min-h-[26px] items-center justify-between gap-3 ${disabled ? "opacity-45" : ""}`}>
+      <span className="truncate text-[12px] text-terminal-text">{label}</span>
+      <span className="flex shrink-0 items-center gap-1.5">{children}</span>
     </div>
   );
 }
 
-function Row({ label, children, disabled, tip }: { label: string; children: ReactNode; disabled?: boolean; tip?: string }) {
+function GroupLabel({ children }: { children: ReactNode }) {
   return (
-    <label
-      title={tip}
-      className={`flex min-h-[22px] items-center justify-between gap-2 text-xs ${disabled ? "text-terminal-muted/50" : "text-terminal-text"}`}
-    >
-      <span className="truncate">{label}</span>
-      <span className="flex shrink-0 items-center gap-1.5">{children}</span>
-    </label>
+    <div className="mb-0.5 mt-2 flex items-center gap-2">
+      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-terminal-muted">{children}</span>
+      <div className="h-px flex-1 bg-terminal-border" />
+    </div>
   );
 }
 
-function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
+function Toggle({ on, onChange, disabled }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
-    <input
-      type="checkbox"
-      checked={checked}
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
       disabled={disabled}
-      onChange={(e) => onChange(e.target.checked)}
-      className="h-3.5 w-3.5 cursor-pointer accent-flow-delta disabled:cursor-not-allowed disabled:opacity-40"
+      data-on={on}
+      onClick={() => onChange(!on)}
+      className="switch disabled:cursor-not-allowed disabled:opacity-40"
     />
   );
 }
 
-function ColorSwatch({ value, fallback, onChange }: { value: string; fallback: string; onChange: (v: string) => void }) {
+function Seg({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
   return (
-    <>
-      <input
-        type="color"
-        value={value || fallback}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-5 w-6 cursor-pointer rounded border border-terminal-border bg-transparent p-0"
-      />
+    <div className="seg">
+      {options.map((o) => (
+        <button key={o.value} onClick={() => onChange(o.value)} className={`seg-item ${value === o.value ? "seg-item-on" : ""}`}>
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function NumberField({ value, onChange, min, max, step }: { value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number }) {
+  return (
+    <input
+      type="number"
+      value={value}
+      min={min}
+      max={max}
+      step={step ?? 1}
+      onChange={(e) => onChange(Number(e.target.value))}
+      className="tinput w-16"
+    />
+  );
+}
+
+function Swatch({ value, fallback, onChange }: { value: string; fallback: string; onChange: (v: string) => void }) {
+  return (
+    <span className="flex items-center gap-1.5">
+      <label
+        className="relative h-5 w-5 cursor-pointer overflow-hidden rounded border border-terminal-border-strong"
+        style={{ background: value || fallback }}
+        title="Pick colour"
+      >
+        <input type="color" value={value || fallback} onChange={(e) => onChange(e.target.value)} className="absolute inset-0 cursor-pointer opacity-0" />
+      </label>
       {value ? (
-        <button
-          type="button"
-          title="Reset to theme colour"
-          onClick={() => onChange("")}
-          className="text-[11px] leading-none text-terminal-muted hover:text-terminal-text"
-        >
-          ×
+        <button type="button" title="Reset to theme colour" onClick={() => onChange("")} className="text-[10px] leading-none text-terminal-muted hover:text-terminal-text">
+          reset
         </button>
       ) : (
-        <span className="w-[10px]" />
+        <span className="text-[10px] text-terminal-muted/60">auto</span>
       )}
-    </>
+    </span>
   );
 }
 
 function FormatSelect({ value, onChange }: { value: FootprintTextFormat; onChange: (v: FootprintTextFormat) => void }) {
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value as FootprintTextFormat)} className={`${selCls} w-32`}>
+    <select value={value} onChange={(e) => onChange(e.target.value as FootprintTextFormat)} className="tsel w-32 text-[11px]">
       {FOOTPRINT_TEXT_FORMATS.map((f) => (
         <option key={f.value} value={f.value} disabled={!f.supported} title={f.supported ? "" : "Requires trade-count footprint data"}>
           {f.label}
@@ -90,14 +104,11 @@ function FormatSelect({ value, onChange }: { value: FootprintTextFormat; onChang
   );
 }
 
-// dark-theme fallbacks shown in the colour picker while a setting is "" (theme-driven)
-const FB = {
-  imbBuy: "#16c172",
-  imbSell: "#ef4d63",
-  poc: "#f5d020",
-  text: "#c7d0db",
-  fill: "#3a4350",
-};
+// dark-theme fallbacks shown in the swatch while a setting is "" (theme-driven)
+const FB = { imbBuy: "#16c172", imbSell: "#ef4d63", poc: "#f5d020", text: "#c7d0db", fill: "#3a4350" };
+
+const TABS = ["General", "Cluster", "Imbalance", "POC", "Overlays"] as const;
+type Tab = (typeof TABS)[number];
 
 const SINGLE_TEXT_MODES: { value: FootprintMode; label: string }[] = [
   { value: "bidAsk", label: "Bid X Ask" },
@@ -112,228 +123,222 @@ export default function SettingsModal({ open, onClose }: { open: boolean; onClos
   const resetSettings = useStore((s) => s.resetSettings);
   const footprintMode = useStore((s) => s.footprintMode);
   const setFootprintMode = useStore((s) => s.setFootprintMode);
+  const [tab, setTab] = useState<Tab>("General");
 
   const set = (p: Partial<FootprintSettings>) => setSettings(p);
   const double = settings.clusterColumns === "double";
 
   return (
-    <FloatingWindow id="settings" title="⚙️ Footprint Settings" open={open} onClose={onClose} defaultRect={{ w: 344, h: 560 }} minW={300} minH={280}>
-      {/* PRESETS */}
-      <Section title="Presets">
-        <div className="grid grid-cols-3 gap-1">
-          {FOOTPRINT_PRESETS.map((p) => (
-            <button
-              key={p.name}
-              title={p.hint}
-              onClick={() => {
-                setSettings(p.settings);
-                if (p.mode) setFootprintMode(p.mode);
-              }}
-              className="rounded border border-terminal-border px-1.5 py-1 text-[11px] text-terminal-muted hover:border-flow-delta hover:bg-terminal-border hover:text-terminal-text"
-            >
-              {p.name}
-            </button>
-          ))}
-        </div>
-      </Section>
-
-      {/* EDGE */}
-      <Section title="Edge">
-        <Row label="Last Value">
-          <Toggle checked={settings.showLastValue} onChange={(v) => set({ showLastValue: v })} />
-        </Row>
-        <Row label="Name">
-          <Toggle checked={settings.showSeriesName} onChange={(v) => set({ showSeriesName: v })} />
-        </Row>
-      </Section>
-
-      {/* CLUSTER */}
-      <Section title="Cluster">
-        <Row label="Show Cluster" tip="Off draws plain candles at footprint zoom">
-          <Toggle checked={settings.showCluster} onChange={(v) => set({ showCluster: v })} />
-        </Row>
-        <Row label="Columns">
-          <select
-            value={settings.clusterColumns}
-            onChange={(e) => set({ clusterColumns: e.target.value as FootprintColumns })}
-            className={selCls}
+    <FloatingWindow id="settings" title="Footprint Settings" open={open} onClose={onClose} defaultRect={{ w: 396, h: 540 }} minW={320} minH={300} bodyClassName="flex min-h-0 flex-col">
+      {/* tab strip */}
+      <div className="flex shrink-0 items-center gap-0.5 border-b border-terminal-border bg-terminal-bg/30 px-2 py-1.5">
+        {TABS.map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`rounded px-2.5 py-1 text-[11px] font-medium transition-colors ${
+              tab === t ? "bg-accent/15 text-accent" : "text-terminal-muted hover:bg-terminal-border/50 hover:text-terminal-text"
+            }`}
           >
-            <option value="single">Single</option>
-            <option value="double">Double</option>
-          </select>
-        </Row>
-        {!double && (
-          <Row label="Single text">
-            <select value={footprintMode} onChange={(e) => setFootprintMode(e.target.value as FootprintMode)} className={selCls}>
-              {SINGLE_TEXT_MODES.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
-                </option>
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {/* tab body */}
+      <div className="min-h-0 flex-1 space-y-1.5 overflow-auto px-3 py-2.5">
+        {tab === "General" && (
+          <>
+            <GroupLabel>Presets</GroupLabel>
+            <div className="flex flex-wrap gap-1">
+              {FOOTPRINT_PRESETS.map((p) => (
+                <button
+                  key={p.name}
+                  title={p.hint}
+                  onClick={() => {
+                    setSettings(p.settings);
+                    if (p.mode) setFootprintMode(p.mode);
+                  }}
+                  className="rounded-md border border-terminal-border bg-terminal-bg/60 px-2 py-1 text-[11px] font-medium text-terminal-muted transition-colors hover:border-accent/40 hover:bg-accent/10 hover:text-terminal-text"
+                >
+                  {p.name}
+                </button>
               ))}
-            </select>
-          </Row>
+            </div>
+
+            <GroupLabel>Edge</GroupLabel>
+            <Field label="Last Value">
+              <Toggle on={settings.showLastValue} onChange={(v) => set({ showLastValue: v })} />
+            </Field>
+            <Field label="Name">
+              <Toggle on={settings.showSeriesName} onChange={(v) => set({ showSeriesName: v })} />
+            </Field>
+
+            <GroupLabel>Block</GroupLabel>
+            <Field label="Block Size (Ticks)">
+              <NumberField value={settings.tickMultiplier} min={1} onChange={(v) => set({ tickMultiplier: Math.max(1, Math.floor(v) || 1) })} />
+            </Field>
+            <Field label="Lock Block Size" tip="Ignore zoom-based auto-consolidation">
+              <Toggle on={settings.lockBlockSize} onChange={(v) => set({ lockBlockSize: v })} />
+            </Field>
+            <Field label="Thin candle beside footprints">
+              <Toggle on={settings.showThinCandle} onChange={(v) => set({ showThinCandle: v })} />
+            </Field>
+          </>
         )}
-        <Row label="Color Matrix">
-          <select value={settings.colorMatrix} onChange={(e) => set({ colorMatrix: e.target.value as FootprintColorMatrix })} className={selCls}>
-            <option value="default">Default</option>
-            <option value="volume">Volume</option>
-            <option value="delta">Delta</option>
-          </select>
-        </Row>
-        <Row label="Auto Fontsize">
-          <Toggle checked={settings.autoFontSize} onChange={(v) => set({ autoFontSize: v })} />
-        </Row>
-        {!settings.autoFontSize && (
-          <Row label="Font size (px)">
-            <input
-              type="number"
-              min={6}
-              max={13}
-              step={1}
-              value={settings.fixedFontSize}
-              onChange={(e) => set({ fixedFontSize: Math.max(6, Math.min(13, Math.round(Number(e.target.value) || 10))) })}
-              className={`${selCls} w-14 text-right font-mono`}
-            />
-          </Row>
+
+        {tab === "Cluster" && (
+          <>
+            <Field label="Show Cluster" tip="Off draws plain candles at footprint zoom">
+              <Toggle on={settings.showCluster} onChange={(v) => set({ showCluster: v })} />
+            </Field>
+            <Field label="Columns">
+              <Seg
+                value={settings.clusterColumns}
+                onChange={(v) => set({ clusterColumns: v as FootprintColumns })}
+                options={[
+                  { value: "single", label: "Single" },
+                  { value: "double", label: "Double" },
+                ]}
+              />
+            </Field>
+            {!double && (
+              <Field label="Single text">
+                <select value={footprintMode} onChange={(e) => setFootprintMode(e.target.value as FootprintMode)} className="tsel text-[11px]">
+                  {SINGLE_TEXT_MODES.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
+            <Field label="Color Matrix">
+              <Seg
+                value={settings.colorMatrix}
+                onChange={(v) => set({ colorMatrix: v as FootprintColorMatrix })}
+                options={[
+                  { value: "default", label: "Default" },
+                  { value: "volume", label: "Vol" },
+                  { value: "delta", label: "Delta" },
+                ]}
+              />
+            </Field>
+            <Field label="Auto Fontsize">
+              <Toggle on={settings.autoFontSize} onChange={(v) => set({ autoFontSize: v })} />
+            </Field>
+            {!settings.autoFontSize && (
+              <Field label="Font size (px)">
+                <NumberField value={settings.fixedFontSize} min={6} max={13} onChange={(v) => set({ fixedFontSize: Math.max(6, Math.min(13, Math.round(v) || 10)) })} />
+              </Field>
+            )}
+            <Field label="Show Profile" tip="Per-row volume bar inside each cell">
+              <Toggle on={settings.showProfile} onChange={(v) => set({ showProfile: v })} />
+            </Field>
+
+            <GroupLabel>Left Cluster</GroupLabel>
+            <Field label="Text Format">
+              <FormatSelect value={settings.leftFormat} onChange={(v) => set({ leftFormat: v })} />
+            </Field>
+            <Field label="Text Color">
+              <Swatch value={settings.leftTextColor} fallback={FB.text} onChange={(v) => set({ leftTextColor: v })} />
+            </Field>
+            <Field label="Background">
+              <Toggle on={settings.leftBackground} onChange={(v) => set({ leftBackground: v })} />
+            </Field>
+            <Field label="Fill">
+              <Swatch value={settings.leftFill} fallback={FB.fill} onChange={(v) => set({ leftFill: v })} />
+            </Field>
+
+            <GroupLabel>Right Cluster · double-column</GroupLabel>
+            <Field label="Text Format" disabled={!double}>
+              <FormatSelect value={settings.rightFormat} onChange={(v) => set({ rightFormat: v })} />
+            </Field>
+            <Field label="Text Color" disabled={!double}>
+              <Swatch value={settings.rightTextColor} fallback={FB.text} onChange={(v) => set({ rightTextColor: v })} />
+            </Field>
+            <Field label="Background" disabled={!double}>
+              <Toggle on={settings.rightBackground} onChange={(v) => set({ rightBackground: v })} disabled={!double} />
+            </Field>
+            <Field label="Fill" disabled={!double}>
+              <Swatch value={settings.rightFill} fallback={FB.fill} onChange={(v) => set({ rightFill: v })} />
+            </Field>
+          </>
         )}
-        <Row label="Show Profile" tip="Per-row volume bar inside each cell">
-          <Toggle checked={settings.showProfile} onChange={(v) => set({ showProfile: v })} />
-        </Row>
-      </Section>
 
-      {/* LEFT CLUSTER */}
-      <Section title="Left Cluster" note={double ? undefined : "Applies to the left side in Double-column mode"}>
-        <Row label="Text Format">
-          <FormatSelect value={settings.leftFormat} onChange={(v) => set({ leftFormat: v })} />
-        </Row>
-        <Row label="Background">
-          <Toggle checked={settings.leftBackground} onChange={(v) => set({ leftBackground: v })} />
-        </Row>
-        <Row label="Fill">
-          <ColorSwatch value={settings.leftFill} fallback={FB.fill} onChange={(v) => set({ leftFill: v })} />
-        </Row>
-        <Row label="Text Color">
-          <ColorSwatch value={settings.leftTextColor} fallback={FB.text} onChange={(v) => set({ leftTextColor: v })} />
-        </Row>
-      </Section>
+        {tab === "Imbalance" && (
+          <>
+            <Field label="Show Imbalances">
+              <Toggle on={settings.showImbalances} onChange={(v) => set({ showImbalances: v })} />
+            </Field>
+            <Field label="Ratio">
+              <NumberField value={settings.imbalanceRatio} min={1} step={0.1} onChange={(v) => set({ imbalanceRatio: Math.max(1, v || 1) })} />
+            </Field>
+            <Field label="Min Volume">
+              <NumberField value={settings.imbalanceMinVolume} min={0} onChange={(v) => set({ imbalanceMinVolume: Math.max(0, Math.floor(v) || 0) })} />
+            </Field>
+            <Field label="Buy Color">
+              <Swatch value={settings.imbalanceBuyColor} fallback={FB.imbBuy} onChange={(v) => set({ imbalanceBuyColor: v })} />
+            </Field>
+            <Field label="Sell Color">
+              <Swatch value={settings.imbalanceSellColor} fallback={FB.imbSell} onChange={(v) => set({ imbalanceSellColor: v })} />
+            </Field>
 
-      {/* RIGHT CLUSTER */}
-      <Section title="Right Cluster" note="Used in Double-column mode">
-        <Row label="Text Format" disabled={!double}>
-          <FormatSelect value={settings.rightFormat} onChange={(v) => set({ rightFormat: v })} />
-        </Row>
-        <Row label="Background" disabled={!double}>
-          <Toggle checked={settings.rightBackground} onChange={(v) => set({ rightBackground: v })} disabled={!double} />
-        </Row>
-        <Row label="Fill" disabled={!double}>
-          <ColorSwatch value={settings.rightFill} fallback={FB.fill} onChange={(v) => set({ rightFill: v })} />
-        </Row>
-        <Row label="Text Color" disabled={!double}>
-          <ColorSwatch value={settings.rightTextColor} fallback={FB.text} onChange={(v) => set({ rightTextColor: v })} />
-        </Row>
-      </Section>
+            <GroupLabel>Lopsided · coming soon</GroupLabel>
+            <Field label="Lopsided Format" disabled tip="Needs a lopsided model we don't compute yet">
+              <Toggle on={false} onChange={() => {}} disabled />
+            </Field>
+            <Field label="Lopsided Scales" disabled tip="Needs a lopsided model we don't compute yet">
+              <Toggle on={false} onChange={() => {}} disabled />
+            </Field>
+          </>
+        )}
 
-      {/* IMBALANCE */}
-      <Section title="Imbalance">
-        <Row label="Show Imbalances">
-          <Toggle checked={settings.showImbalances} onChange={(v) => set({ showImbalances: v })} />
-        </Row>
-        <Row label="Ratio">
-          <input
-            type="number"
-            min={1}
-            step={0.1}
-            value={settings.imbalanceRatio}
-            onChange={(e) => set({ imbalanceRatio: Math.max(1, Number(e.target.value) || 1) })}
-            className={`${selCls} w-14 text-right font-mono`}
-          />
-        </Row>
-        <Row label="Min Volume">
-          <input
-            type="number"
-            min={0}
-            step={1}
-            value={settings.imbalanceMinVolume}
-            onChange={(e) => set({ imbalanceMinVolume: Math.max(0, Math.floor(Number(e.target.value) || 0)) })}
-            className={`${selCls} w-14 text-right font-mono`}
-          />
-        </Row>
-        <Row label="Buy Color">
-          <ColorSwatch value={settings.imbalanceBuyColor} fallback={FB.imbBuy} onChange={(v) => set({ imbalanceBuyColor: v })} />
-        </Row>
-        <Row label="Sell Color">
-          <ColorSwatch value={settings.imbalanceSellColor} fallback={FB.imbSell} onChange={(v) => set({ imbalanceSellColor: v })} />
-        </Row>
-      </Section>
+        {tab === "POC" && (
+          <>
+            <Field label="Show POC">
+              <Toggle on={settings.showPoc} onChange={(v) => set({ showPoc: v })} />
+            </Field>
+            <Field label="POC Color">
+              <Swatch value={settings.pocColor} fallback={FB.poc} onChange={(v) => set({ pocColor: v })} />
+            </Field>
+            <Field label="POC Marker">
+              <Toggle on={settings.showPocMarker} onChange={(v) => set({ showPocMarker: v })} />
+            </Field>
+            <Field label="Marker Color">
+              <Swatch value={settings.pocMarkerColor} fallback={FB.poc} onChange={(v) => set({ pocMarkerColor: v })} />
+            </Field>
+            <Field label="Extend POC" tip="Thin line extending the POC level to the right">
+              <Toggle on={settings.extendPoc} onChange={(v) => set({ extendPoc: v })} />
+            </Field>
+          </>
+        )}
 
-      {/* LOPSIDED — disabled (no faked analytics) */}
-      <Section title="Lopsided Format / Scales" note="Coming soon — needs a lopsided model we don't compute yet.">
-        <Row label="Lopsided Format" disabled tip="Coming soon">
-          <Toggle checked={false} onChange={() => {}} disabled />
-        </Row>
-        <Row label="Lopsided Scales" disabled tip="Coming soon">
-          <Toggle checked={false} onChange={() => {}} disabled />
-        </Row>
-      </Section>
+        {tab === "Overlays" && (
+          <>
+            <Field label="VWAP line">
+              <Toggle on={settings.showVwap} onChange={(v) => set({ showVwap: v })} />
+            </Field>
+            <Field label="SD bands (SD1 & SD2)">
+              <Toggle on={settings.showSdBands} onChange={(v) => set({ showSdBands: v })} />
+            </Field>
+            <Field label="Signal badges (LP / AD / A / E)">
+              <Toggle on={settings.showBadges} onChange={(v) => set({ showBadges: v })} />
+            </Field>
+            <Field label="Execution fills">
+              <Toggle on={settings.showFills} onChange={(v) => set({ showFills: v })} />
+            </Field>
+          </>
+        )}
+      </div>
 
-      {/* POINT OF CONTROL */}
-      <Section title="Point of Control (Volume)">
-        <Row label="Show POC">
-          <Toggle checked={settings.showPoc} onChange={(v) => set({ showPoc: v })} />
-        </Row>
-        <Row label="POC Color">
-          <ColorSwatch value={settings.pocColor} fallback={FB.poc} onChange={(v) => set({ pocColor: v })} />
-        </Row>
-        <Row label="POC Marker">
-          <Toggle checked={settings.showPocMarker} onChange={(v) => set({ showPocMarker: v })} />
-        </Row>
-        <Row label="Marker Color">
-          <ColorSwatch value={settings.pocMarkerColor} fallback={FB.poc} onChange={(v) => set({ pocMarkerColor: v })} />
-        </Row>
-        <Row label="Extend POC" tip="Thin line extending the POC level to the right">
-          <Toggle checked={settings.extendPoc} onChange={(v) => set({ extendPoc: v })} />
-        </Row>
-      </Section>
-
-      {/* INDICATOR OVERLAYS (kept from the original panel) */}
-      <Section title="Overlays">
-        <Row label="VWAP line">
-          <Toggle checked={settings.showVwap} onChange={(v) => set({ showVwap: v })} />
-        </Row>
-        <Row label="SD bands (SD1 & SD2)">
-          <Toggle checked={settings.showSdBands} onChange={(v) => set({ showSdBands: v })} />
-        </Row>
-        <Row label="Signal badges (LP / AD / A / E)">
-          <Toggle checked={settings.showBadges} onChange={(v) => set({ showBadges: v })} />
-        </Row>
-        <Row label="Execution fills">
-          <Toggle checked={settings.showFills} onChange={(v) => set({ showFills: v })} />
-        </Row>
-        <Row label="Thin candle beside footprints">
-          <Toggle checked={settings.showThinCandle} onChange={(v) => set({ showThinCandle: v })} />
-        </Row>
-        <Row label="Block Size (Ticks)">
-          <input
-            type="number"
-            min={1}
-            step={1}
-            value={settings.tickMultiplier}
-            onChange={(e) => set({ tickMultiplier: Math.max(1, Math.floor(Number(e.target.value)) || 1) })}
-            className={`${selCls} w-14 text-right font-mono`}
-          />
-        </Row>
-        <Row label="Lock Block Size">
-          <Toggle checked={settings.lockBlockSize} onChange={(v) => set({ lockBlockSize: v })} />
-        </Row>
-      </Section>
-
-      <div className="mt-3 flex justify-end border-t border-terminal-border pt-2">
-        <button
-          onClick={() => resetSettings()}
-          title="Reset all footprint settings to defaults"
-          className="rounded border border-terminal-border px-2 py-1 text-[11px] text-terminal-muted hover:bg-terminal-border hover:text-terminal-text"
-        >
+      {/* footer */}
+      <div className="flex shrink-0 items-center justify-between border-t border-terminal-border bg-terminal-bg/30 px-3 py-2">
+        <button onClick={() => resetSettings()} className="text-[11px] text-terminal-muted hover:text-terminal-text">
           Reset to defaults
+        </button>
+        <button onClick={onClose} className="tbtn h-6 px-3 text-[11px]">
+          Close
         </button>
       </div>
     </FloatingWindow>

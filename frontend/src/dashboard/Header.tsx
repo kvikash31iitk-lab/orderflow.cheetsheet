@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Boxes, CandlestickChart, ChevronDown, Grid3x3, Lock, Moon, Settings, Sun, Unlock } from "lucide-react";
 import { api } from "../api/rest";
 import { wsClient } from "../api/ws";
 import { useStore } from "../store/useStore";
@@ -26,12 +27,14 @@ const CONSOLIDATIONS: { value: number; label: string }[] = [
 
 function Stat({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
-    <div className="flex flex-col leading-tight">
-      <span className="text-[10px] uppercase text-terminal-muted">{label}</span>
-      <span className={`text-sm font-semibold ${color ?? ""}`}>{value}</span>
+    <div className="flex flex-col leading-none">
+      <span className="text-[9.5px] font-medium uppercase tracking-wide text-terminal-muted">{label}</span>
+      <span className={`mt-0.5 font-mono text-[13px] font-semibold tabular-nums ${color ?? "text-terminal-text"}`}>{value}</span>
     </div>
   );
 }
+
+const Sep = () => <div className="mx-0.5 h-5 w-px shrink-0 bg-terminal-border" />;
 
 export default function Header() {
   const source = useStore((s) => s.source);
@@ -96,58 +99,58 @@ export default function Header() {
 
   return (
     <>
-    <header className="flex items-center gap-4 border-b border-terminal-border bg-terminal-panel px-3 py-1.5">
-      <div className="flex items-center gap-2">
-        <span className="text-base font-bold tracking-wide text-flow-buyHi">VIKINGS</span>
-        <span className="text-[10px] text-terminal-muted">Order Flow Terminal</span>
+    <header className="flex items-center gap-1.5 border-b border-terminal-border bg-terminal-panel px-3 py-1.5">
+      {/* brand */}
+      <div className="mr-1 flex items-baseline gap-1.5">
+        <span className="text-[15px] font-bold tracking-wide text-terminal-text">VIKINGS</span>
+        <span className="hidden text-[9.5px] uppercase tracking-wider text-terminal-muted lg:inline">Order Flow</span>
       </div>
 
+      <Sep />
+
+      {/* data source + symbol */}
       <select
         value={source}
         onChange={(e) => setSource(e.target.value as "truedata" | "databento")}
-        className="rounded border border-terminal-border bg-terminal-bg px-2 py-1 text-sm font-semibold text-flow-buyHi"
-        title="Select Data Source"
+        className="tsel font-semibold"
+        title="Data source"
       >
         <option value="truedata">TrueData</option>
         <option value="databento">DataBento</option>
       </select>
-
-      <select
-        value={symbol}
-        onChange={(e) => setSymbol(e.target.value)}
-        className="rounded border border-terminal-border bg-terminal-bg px-2 py-1 text-sm font-semibold"
-      >
+      <select value={symbol} onChange={(e) => setSymbol(e.target.value)} className="tsel font-semibold" title="Symbol">
         {filteredSymbols.map((s) => {
-          // for DataBento, badge each symbol live (🟢) vs simulated (🔵 no entitlement)
+          // DataBento: mark simulated symbols (no live entitlement) without an emoji glyph
           const isSim = status?.simSymbols?.includes(s.toUpperCase()) ?? false;
-          const badge = source === "databento" ? (isSim ? " 🔵 sim" : " 🟢") : "";
+          const badge = source === "databento" && isSim ? " · sim" : "";
           return (
             <option key={s} value={s}>
-              {s}{badge}
+              {s}
+              {badge}
             </option>
           );
         })}
       </select>
 
-      <div className="flex items-center gap-0.5">
+      <Sep />
+
+      {/* timeframe (segmented) */}
+      <div className="seg">
         {tfs.map((tf) => (
-          <button
-            key={tf}
-            onClick={() => setTimeframe(tf)}
-            className={`rounded px-2 py-1 text-xs ${
-              timeframe === tf ? "bg-flow-delta text-white" : "text-terminal-muted hover:bg-terminal-border"
-            }`}
-          >
+          <button key={tf} onClick={() => setTimeframe(tf)} className={`seg-item ${timeframe === tf ? "seg-item-on" : ""}`}>
             {tf}
           </button>
         ))}
       </div>
 
+      <Sep />
+
+      {/* footprint controls */}
       <select
         value={footprintMode}
         onChange={(e) => setFootprintMode(e.target.value as FootprintMode)}
         title="Footprint cell display mode"
-        className="rounded border border-terminal-border bg-terminal-bg px-2 py-1 text-xs"
+        className="tsel"
       >
         {FOOTPRINT_MODES.map((m) => (
           <option key={m.value} value={m.value}>
@@ -155,12 +158,11 @@ export default function Header() {
           </option>
         ))}
       </select>
-
       <select
         value={consolidation}
         onChange={(e) => setConsolidation(Number(e.target.value))}
-        title="Group Ticks — consolidate price rows"
-        className="rounded border border-terminal-border bg-terminal-bg px-2 py-1 text-xs"
+        title="Group ticks — consolidate price rows"
+        className="tsel"
       >
         {CONSOLIDATIONS.map((c) => (
           <option key={c.value} value={c.value}>
@@ -168,65 +170,44 @@ export default function Header() {
           </option>
         ))}
       </select>
-
       <button
         onClick={() => setChartDisplayMode(chartDisplayMode === "footprint" ? "candle" : "footprint")}
         title="Toggle footprint / candlestick view"
-        className="rounded border border-terminal-border bg-terminal-bg px-2 py-1 text-xs font-semibold hover:bg-terminal-border"
+        className="tbtn"
       >
-        {chartDisplayMode === "footprint" ? "📊 Footprint" : "🕯️ Candles"}
+        {chartDisplayMode === "footprint" ? <Grid3x3 size={14} className="text-terminal-muted" /> : <CandlestickChart size={14} className="text-terminal-muted" />}
+        <span>{chartDisplayMode === "footprint" ? "Footprint" : "Candles"}</span>
       </button>
-
-      <button
-        onClick={toggleTheme}
-        title="Toggle light / dark theme"
-        className="rounded border border-terminal-border bg-terminal-bg px-2 py-1 text-xs font-semibold hover:bg-terminal-border"
-      >
-        {theme === "dark" ? "🌙 Dark" : "☀️ Light"}
+      <button onClick={() => setBlockSizeModalOpen(true)} title="Orderflow block size (shortcut: ;)" className="tbtn">
+        <Boxes size={14} className="text-terminal-muted" />
+        <span>Block {settings.tickMultiplier}</span>
       </button>
-
-      <button
-        onClick={() => setBlockSizeModalOpen(true)}
-        title="Change Orderflow Block Size (Shortcut: ;)"
-        className="flex items-center gap-1 rounded border border-terminal-border bg-terminal-bg px-2 py-1 text-xs font-semibold hover:bg-terminal-border"
-      >
-        🧱 Block: {settings.tickMultiplier}
-      </button>
-
       <button
         onClick={() => setSettings({ lockBlockSize: !settings.lockBlockSize })}
-        title={settings.lockBlockSize ? "Unlock Block Size (Enable Zoom Auto-Consolidation)" : "Lock Block Size (Disable Zoom Auto-Consolidation)"}
-        className="flex items-center gap-1 rounded border border-terminal-border bg-terminal-bg px-2 py-1 text-xs font-semibold hover:bg-terminal-border"
+        title={settings.lockBlockSize ? "Unlock block size (enable zoom auto-consolidation)" : "Lock block size (disable zoom auto-consolidation)"}
+        className={`tbtn ${settings.lockBlockSize ? "tbtn-on" : ""}`}
       >
-        {settings.lockBlockSize ? "🔒 Locked" : "🔓 Auto"}
+        {settings.lockBlockSize ? <Lock size={13} /> : <Unlock size={13} className="text-terminal-muted" />}
+        <span>{settings.lockBlockSize ? "Locked" : "Auto"}</span>
       </button>
 
-      <button
-        onClick={() => setFootprintSettingsOpen(true)}
-        title="Footprint settings"
-        className="rounded border border-terminal-border bg-terminal-bg px-2 py-1 text-sm hover:bg-terminal-border"
-      >
-        ⚙️
-      </button>
+      <Sep />
 
-      <button
-        onClick={() => setIndicatorsOpen(true)}
-        title="Custom indicators"
-        className="rounded border border-terminal-border bg-terminal-bg px-2 py-1 text-xs font-semibold italic hover:bg-terminal-border"
-      >
-        ƒx
+      {/* tools */}
+      <button onClick={() => setFootprintSettingsOpen(true)} title="Footprint settings" className="tbtn-icon">
+        <Settings size={15} />
       </button>
-
+      <button onClick={() => setIndicatorsOpen(true)} title="Custom indicators" className="tbtn-icon">
+        <span className="text-[13px] font-semibold italic text-terminal-text">ƒx</span>
+      </button>
       <div className="relative flex items-center">
         <button
-          onClick={() =>
-            pendingAnchorTool === "anchored-vwap" ? cancelAnchorPick() : beginAnchoredVwapPlacement()
-          }
+          onClick={() => (pendingAnchorTool === "anchored-vwap" ? cancelAnchorPick() : beginAnchoredVwapPlacement())}
           title="Anchored VWAP — click, then click a candle to drop a new anchored VWAP"
-          className={`rounded-l border px-2 py-1 text-xs font-semibold ${
+          className={`inline-flex h-7 select-none items-center rounded-l-md border px-2.5 text-[12px] font-medium transition-colors ${
             pendingAnchorTool === "anchored-vwap"
-              ? "border-flow-exhaustion bg-flow-exhaustion/20 text-flow-exhaustion"
-              : "border-terminal-border bg-terminal-bg text-terminal-text hover:bg-terminal-border"
+              ? "border-flow-exhaustion/50 bg-flow-exhaustion/15 text-flow-exhaustion"
+              : "border-terminal-border bg-terminal-bg/60 text-terminal-text hover:bg-terminal-border/40"
           }`}
         >
           AVWAP
@@ -234,18 +215,23 @@ export default function Header() {
         <button
           onClick={() => setAvwapMgrOpen((v) => !v)}
           title="Manage Anchored VWAPs (hide / delete / clear all)"
-          className={`flex items-center gap-0.5 rounded-r border border-l-0 px-1.5 py-1 text-[10px] ${
+          className={`inline-flex h-7 items-center gap-0.5 rounded-r-md border border-l-0 px-1.5 text-[11px] transition-colors ${
             avwapMgrOpen
-              ? "border-flow-exhaustion bg-flow-exhaustion/20 text-flow-exhaustion"
-              : "border-terminal-border bg-terminal-bg text-terminal-muted hover:bg-terminal-border hover:text-terminal-text"
+              ? "border-flow-exhaustion/50 bg-flow-exhaustion/15 text-flow-exhaustion"
+              : "border-terminal-border bg-terminal-bg/60 text-terminal-muted hover:bg-terminal-border/40 hover:text-terminal-text"
           }`}
         >
-          {avwapCount > 0 && <span className="font-semibold text-flow-exhaustion">{avwapCount}</span>}▾
+          {avwapCount > 0 && <span className="font-semibold text-flow-exhaustion">{avwapCount}</span>}
+          <ChevronDown size={12} />
         </button>
         <AvwapManager open={avwapMgrOpen} onClose={() => setAvwapMgrOpen(false)} />
       </div>
+      <button onClick={toggleTheme} title="Toggle light / dark theme" className="tbtn-icon">
+        {theme === "dark" ? <Moon size={14} /> : <Sun size={14} />}
+      </button>
 
-      <div className="ml-2 flex items-center gap-5">
+      {/* market metrics */}
+      <div className="ml-2 flex items-center gap-4">
         <Stat label="Price" value={last ? last.close.toFixed(2) : "—"} />
         <Stat label="Delta" value={`${delta >= 0 ? "+" : ""}${Math.round(delta)}`} color={delta >= 0 ? "text-flow-buyHi" : "text-flow-sellHi"} />
         <Stat label="Cum Δ" value={`${Math.round(cum)}`} color={cum >= 0 ? "text-flow-buyHi" : "text-flow-sellHi"} />

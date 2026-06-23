@@ -9,10 +9,13 @@ export default {
         terminal: {
           bg: "rgb(var(--terminal-bg) / <alpha-value>)",
           panel: "rgb(var(--terminal-panel) / <alpha-value>)",
+          elevated: "rgb(var(--terminal-elevated) / <alpha-value>)",
           border: "rgb(var(--terminal-border) / <alpha-value>)",
+          "border-strong": "rgb(var(--terminal-border-strong) / <alpha-value>)",
           text: "rgb(var(--terminal-text) / <alpha-value>)",
           muted: "rgb(var(--terminal-muted) / <alpha-value>)",
         },
+        accent: "rgb(var(--accent) / <alpha-value>)",
         flow: {
           buy: "#0e8a4f",
           buyHi: "#16c172",
