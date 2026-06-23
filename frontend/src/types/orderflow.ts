@@ -1,7 +1,43 @@
 // Wire contract — mirrors backend app/orderflow/models.py to_dict() (camelCase).
 
-// Footprint cell display modes (text shown inside each price row).
+// Footprint cell display modes (single-column text shown inside each price row).
 export type FootprintMode = "bidAsk" | "delta" | "volume" | "volumePercent";
+
+// ---- institutional footprint settings (GoCharting-inspired) ----
+export type FootprintColumns = "single" | "double";
+export type FootprintColorMatrix = "default" | "volume" | "delta";
+
+// Per-cluster text format. The trade-count variants need per-cell trade counts that the
+// current footprint payload does not carry (cells hold volumes only), so they are exposed
+// in the UI but disabled — we never fabricate trade counts from volume.
+export type FootprintTextFormat =
+  | "trades" | "buyTrades" | "buyTradesPct" | "sellTrades" | "sellTradesPct" | "deltaTrades"
+  | "volume" | "buyVolume" | "buyVolumePct" | "sellVolume" | "sellVolumePct"
+  | "delta" | "deltaPct" | "volumePct" | "bidAsk" | "bidAskPlain";
+
+export interface FootprintFormatDef {
+  value: FootprintTextFormat;
+  label: string;
+  supported: boolean; // false -> requires per-cell trade-count data we don't have
+}
+export const FOOTPRINT_TEXT_FORMATS: FootprintFormatDef[] = [
+  { value: "trades", label: "Trades", supported: false },
+  { value: "buyTrades", label: "Buy Trades", supported: false },
+  { value: "buyTradesPct", label: "Buy Trades %", supported: false },
+  { value: "sellTrades", label: "Sell Trades", supported: false },
+  { value: "sellTradesPct", label: "Sell Trades %", supported: false },
+  { value: "deltaTrades", label: "Delta Trades", supported: false },
+  { value: "volume", label: "Volume", supported: true },
+  { value: "buyVolume", label: "Buy Volume", supported: true },
+  { value: "buyVolumePct", label: "Buy Volume %", supported: true },
+  { value: "sellVolume", label: "Sell Volume", supported: true },
+  { value: "sellVolumePct", label: "Sell Volume %", supported: true },
+  { value: "delta", label: "Delta", supported: true },
+  { value: "deltaPct", label: "Delta %", supported: true },
+  { value: "volumePct", label: "Volume %", supported: true },
+  { value: "bidAsk", label: "Bid X Ask", supported: true },
+  { value: "bidAskPlain", label: "Bid Ask", supported: true },
+];
 
 // User-tunable footprint rendering settings (Settings modal -> store -> renderer).
 export interface FootprintSettings {
@@ -16,6 +52,38 @@ export interface FootprintSettings {
   showFills: boolean;          // execution triangles
   showThinCandle: boolean;     // thin candlestick drawn beside the footprint cells
   lockBlockSize: boolean;      // if true, ignores zoom-based consolidation k factor
+
+  // EDGE — native series labels
+  showLastValue: boolean;      // last/current value price-line label
+  showSeriesName: boolean;     // series name (title) label
+
+  // CLUSTER
+  showCluster: boolean;        // master: draw footprint clusters vs plain candles in fp mode
+  clusterColumns: FootprintColumns;
+  colorMatrix: FootprintColorMatrix;
+  autoFontSize: boolean;       // true -> adaptive text; false -> fixedFontSize (still clipped)
+  fixedFontSize: number;
+  showProfile: boolean;        // horizontal volume-profile bar inside each cell
+
+  // LEFT / RIGHT cluster (double-column). Colors "" -> theme palette default.
+  leftFormat: FootprintTextFormat;
+  rightFormat: FootprintTextFormat;
+  leftTextColor: string;
+  rightTextColor: string;
+  leftBackground: boolean;
+  rightBackground: boolean;
+  leftFill: string;
+  rightFill: string;
+
+  // IMBALANCE colors (ratio + minVolume already above)
+  imbalanceBuyColor: string;
+  imbalanceSellColor: string;
+
+  // POINT OF CONTROL
+  pocColor: string;
+  showPocMarker: boolean;
+  pocMarkerColor: string;
+  extendPoc: boolean;          // thin line extending the POC level to the right
 }
 
 // One backtested signal outcome (mirrors backend research.SignalOutcome).

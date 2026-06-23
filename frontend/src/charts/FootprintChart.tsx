@@ -157,10 +157,17 @@ export default function FootprintChart() {
     seriesRef.current?.applyOptions({ indicatorOutputs });
   }, [indicatorOutputs]);
 
-  // settings (tick grouping, imbalance thresholds, indicator toggles) -> redraw
+  // settings (tick grouping, imbalance thresholds, cluster/POC options...) -> redraw.
+  // EDGE: Last Value drives the native price-line + last-value label; Name drives the
+  // series title label. Both are native lightweight-charts series options.
   useEffect(() => {
-    seriesRef.current?.applyOptions({ settings });
-  }, [settings]);
+    seriesRef.current?.applyOptions({
+      settings,
+      lastValueVisible: settings.showLastValue,
+      priceLineVisible: settings.showLastValue,
+      title: settings.showSeriesName ? symbol : "",
+    });
+  }, [settings, symbol]);
 
   // seed the per-symbol imbalance defaults (CME futures are tuned looser than NSE
   // index futures) when the symbol or the fetched config table changes. The user

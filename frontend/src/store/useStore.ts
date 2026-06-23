@@ -75,6 +75,30 @@ export const DEFAULT_SETTINGS: FootprintSettings = {
   showFills: true,
   showThinCandle: true,
   lockBlockSize: false,
+  // institutional footprint settings — defaults reproduce the current clean look
+  // (single column, bid×ask via the toolbar selector, delta-hued volume-intensity fills).
+  showLastValue: true,
+  showSeriesName: false,
+  showCluster: true,
+  clusterColumns: "single",
+  colorMatrix: "default",
+  autoFontSize: true,
+  fixedFontSize: 10,
+  showProfile: false,
+  leftFormat: "sellVolume",
+  rightFormat: "buyVolume",
+  leftTextColor: "",
+  rightTextColor: "",
+  leftBackground: false,
+  rightBackground: false,
+  leftFill: "",
+  rightFill: "",
+  imbalanceBuyColor: "",
+  imbalanceSellColor: "",
+  pocColor: "",
+  showPocMarker: false,
+  pocMarkerColor: "",
+  extendPoc: false,
 };
 
 // chart history budget (default 15k; indicators run on a smaller window - see limits.ts)
@@ -328,6 +352,22 @@ const SETTINGS_NUMERIC_KEYS: ReadonlyArray<keyof FootprintSettings> = [
   "tickMultiplier",
   "imbalanceRatio",
   "imbalanceMinVolume",
+  "fixedFontSize",
+];
+// string-valued settings (enums + color hexes); validated as strings, unknown keys ignored
+const SETTINGS_STRING_KEYS: ReadonlyArray<keyof FootprintSettings> = [
+  "clusterColumns",
+  "colorMatrix",
+  "leftFormat",
+  "rightFormat",
+  "leftTextColor",
+  "rightTextColor",
+  "leftFill",
+  "rightFill",
+  "imbalanceBuyColor",
+  "imbalanceSellColor",
+  "pocColor",
+  "pocMarkerColor",
 ];
 function loadPersistedSettings(): FootprintSettings {
   try {
@@ -335,11 +375,13 @@ function loadPersistedSettings(): FootprintSettings {
     if (raw) {
       const p = JSON.parse(raw) as Record<string, unknown>;
       const out = { ...DEFAULT_SETTINGS };
-      const sink = out as Record<string, number | boolean>;
+      const sink = out as Record<string, number | boolean | string>;
       (Object.keys(DEFAULT_SETTINGS) as (keyof FootprintSettings)[]).forEach((k) => {
         const v = p[k];
         if (SETTINGS_NUMERIC_KEYS.includes(k)) {
           if (typeof v === "number" && Number.isFinite(v)) sink[k] = v;
+        } else if (SETTINGS_STRING_KEYS.includes(k)) {
+          if (typeof v === "string") sink[k] = v;
         } else if (typeof v === "boolean") {
           sink[k] = v;
         }
