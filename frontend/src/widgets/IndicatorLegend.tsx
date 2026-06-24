@@ -14,7 +14,7 @@ function IconBtn({ title, onClick, children, danger }: { title: string; onClick:
     <button
       onClick={onClick}
       title={title}
-      className={`flex h-4 w-4 items-center justify-center rounded hover:bg-terminal-border ${
+      className={`flex h-4 w-4 items-center justify-center rounded hover:bg-terminal-border/40 ${
         danger ? "text-terminal-muted hover:text-flow-sellHi" : "text-terminal-muted hover:text-terminal-text"
       }`}
     >
@@ -59,13 +59,13 @@ export default function IndicatorLegend() {
               data-testid="indicator-legend-row"
               data-indicator-name={ind.name}
               className={`pointer-events-auto flex items-center gap-1.5 rounded border border-transparent bg-terminal-panel/70 py-0.5 pl-1.5 pr-1 backdrop-blur-sm hover:border-terminal-border ${
-                dimmed ? "opacity-55" : ""
+                dimmed ? "opacity-50" : ""
               }`}
               onClick={() => selectIndicator(ind.kind === "anchored-vwap" ? ind.id : null)}
             >
               <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotColor}`} title={statusTitle} />
               <span
-                className={`max-w-[200px] truncate text-[11px] font-medium ${active ? "text-terminal-text" : "text-terminal-muted"} ${
+                className={`max-w-[200px] truncate text-[11px] font-semibold ${active ? "text-terminal-text" : "text-terminal-muted"} ${
                   hiddenInterval ? "line-through" : ""
                 }`}
                 title={statusTitle}

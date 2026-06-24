@@ -27,7 +27,7 @@ export default function Scanner() {
   return (
     <div className="h-full overflow-auto">
       <table className="w-full text-xs">
-        <thead className="sticky top-0 bg-terminal-panel text-terminal-muted">
+        <thead className="sticky top-0 border-b border-terminal-border-strong bg-terminal-panel text-terminal-muted">
           <tr className="text-left">
             <th className="px-2 py-1 font-medium">Symbol</th>
             <th className="px-2 py-1 font-medium text-right">Δ</th>
@@ -48,10 +48,10 @@ export default function Scanner() {
             <tr
               key={`${r.symbol}_${r.timeframe}`}
               onClick={() => selectChartContext(r.symbol, r.timeframe)}
-              className="cursor-pointer border-t border-terminal-border hover:bg-terminal-border/40"
+              className="cursor-pointer border-t border-terminal-border hover:bg-terminal-elevated"
             >
               <td className="px-2 py-1 font-semibold">
-                {r.symbol} <span className="text-[10px] font-normal text-terminal-muted">({r.timeframe})</span>
+                {r.symbol} <span className="text-[10.5px] font-normal text-terminal-muted">({r.timeframe})</span>
               </td>
               <td className={`px-2 py-1 text-right ${r.delta >= 0 ? "text-flow-buyHi" : "text-flow-sellHi"}`}>
                 {r.delta >= 0 ? "+" : ""}
@@ -64,7 +64,10 @@ export default function Scanner() {
               <td className="px-2 py-1">
                 <div className="flex flex-wrap gap-1">
                   {r.signals.map((s) => (
-                    <span key={s} className={`${SIG_COLOR[s] ?? "text-terminal-text"} text-[10px]`}>
+                    <span
+                      key={s}
+                      className={`${SIG_COLOR[s] ?? "text-terminal-text"} rounded border border-terminal-border bg-terminal-elevated px-1 py-0.5 text-[10.5px] font-medium`}
+                    >
                       {s.replace("_", " ")}
                     </span>
                   ))}

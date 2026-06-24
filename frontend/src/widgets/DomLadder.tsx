@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Clapperboard, Crosshair, Loader2 } from "lucide-react";
 import { api } from "../api/rest";
 import { consolidatedRowSize } from "../lib/rowsize";
 import { useStore } from "../store/useStore";
@@ -104,8 +105,8 @@ export default function DomLadder() {
 
   if (replayActive) {
     return (
-      <div className="flex h-full flex-col items-center justify-center bg-terminal-bg text-center p-6 gap-3 text-terminal-muted border border-terminal-border rounded-lg shadow-xl shadow-black/40">
-        <span className="text-3xl filter drop-shadow-[0_0_8px_rgba(239,77,99,0.3)]">🎦</span>
+      <div className="flex h-full flex-col items-center justify-center gap-3 rounded-md border border-terminal-border bg-terminal-bg p-6 text-center text-terminal-muted">
+        <Clapperboard size={28} className="text-terminal-muted" />
         <span className="font-semibold text-xs text-terminal-text uppercase tracking-wider">DOM Inactive in Replay Mode</span>
         <p className="text-[10px] max-w-[200px] leading-normal font-sans">
           Simulated trading is locked while viewing historical replays. Exit Replay Mode to enable live DOM execution.
@@ -169,10 +170,10 @@ export default function DomLadder() {
                 const el = scrollRef.current;
                 if (el) el.scrollTop = (el.scrollHeight - el.clientHeight) / 2;
               }}
-              className="rounded bg-terminal-panel hover:bg-terminal-border border border-terminal-border/80 px-1.5 py-0.5 text-[8px] uppercase font-bold text-terminal-text hover:text-white transition-all flex items-center gap-0.5 active:scale-95 shadow-sm"
+              className="flex items-center gap-0.5 rounded-md border border-terminal-border bg-terminal-panel px-1.5 py-0.5 text-[9px] font-bold uppercase text-terminal-text transition-colors hover:border-terminal-border-strong hover:bg-terminal-border/40"
               title="Recenter Ladder on Last Price"
             >
-              🎯 Center
+              <Crosshair size={11} /> Center
             </button>
           </div>
           
@@ -230,7 +231,7 @@ export default function DomLadder() {
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
         {price == null ? (
           <div className="p-4 text-center text-terminal-muted font-sans flex flex-col items-center justify-center gap-2">
-            <span className="animate-pulse">⏳</span>
+            <Loader2 size={16} className="animate-spin text-terminal-muted" />
             <span>Waiting for market ticks...</span>
           </div>
         ) : (

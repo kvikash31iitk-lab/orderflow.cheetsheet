@@ -57,9 +57,9 @@ export default function AlertsPanel() {
 
   return (
     <div className="h-full overflow-auto">
-      {filteredAlerts.length === 0 && <div className="p-3 text-xs text-terminal-muted">no alerts yet</div>}
+      {filteredAlerts.length === 0 && <div className="px-2 py-1 text-xs text-terminal-muted">no alerts yet</div>}
       {filteredAlerts.map((a, i) => (
-        <div key={`${a.ts}-${i}`} className={`border-l-2 ${SEV[a.severity] ?? SEV.info} bg-terminal-bg/40 px-2 py-1`}>
+        <div key={`${a.ts}-${i}`} className={`border-l-2 ${SEV[a.severity] ?? SEV.info} bg-terminal-elevated px-2 py-1`}>
           <div className="flex items-center justify-between text-[11px]">
             <span className="font-semibold">{a.type}</span>
             <span className="text-terminal-muted">
@@ -67,7 +67,7 @@ export default function AlertsPanel() {
             </span>
           </div>
           <div className="text-[11px] text-terminal-text">{a.message}</div>
-          <div className="text-[9px] text-terminal-muted">{formatIstTime(a.ts, true)} IST</div>
+          <div className="text-[10px] tabular-nums text-terminal-muted">{formatIstTime(a.ts, true)} IST</div>
         </div>
       ))}
     </div>

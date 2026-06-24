@@ -54,8 +54,16 @@ export default function FootprintChart() {
   const activeTool = useStore((s) => s.activeTool);
   const setActiveTool = useStore((s) => s.setActiveTool);
   const lastSymbolRef = useRef(symbol);
-  // right-click footprint context menu (cursor position, or null when closed)
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  // right-click footprint context menu — cursor position + the price/time under the click
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; price: number | null; time: number | null } | null>(null);
+
+  // fit the visible range + re-enable price autoscale (native APIs only; safe)
+  const resetView = () => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    chart.timeScale().fitContent();
+    chart.priceScale("right").applyOptions({ autoScale: true });
+  };
 
   // init the chart + custom series once
   useEffect(() => {
@@ -220,7 +228,20 @@ export default function FootprintChart() {
       onContextMenu={(e) => {
         // open OUR menu only inside the chart area; right-click elsewhere keeps the browser menu
         e.preventDefault();
-        setCtxMenu({ x: e.clientX, y: e.clientY });
+        // resolve the price/time under the cursor via native chart APIs (for Copy actions)
+        let price: number | null = null;
+        let time: number | null = null;
+        const host = hostRef.current;
+        const chart = chartRef.current;
+        const series = seriesRef.current;
+        if (host && chart && series) {
+          const r = host.getBoundingClientRect();
+          const t = chart.timeScale().coordinateToTime(e.clientX - r.left);
+          time = typeof t === "number" ? t * 1000 : null;
+          const p = series.coordinateToPrice(e.clientY - r.top);
+          price = p == null ? null : (p as number);
+        }
+        setCtxMenu({ x: e.clientX, y: e.clientY, price, time });
       }}
     >
       <div ref={hostRef} data-testid="footprint-chart" className="absolute inset-0" />
@@ -268,7 +289,16 @@ export default function FootprintChart() {
           </div>
         </div>
       )}
-      {ctxMenu && <FootprintContextMenu x={ctxMenu.x} y={ctxMenu.y} onClose={() => setCtxMenu(null)} />}
+      {ctxMenu && (
+        <FootprintContextMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          price={ctxMenu.price}
+          time={ctxMenu.time}
+          onResetView={resetView}
+          onClose={() => setCtxMenu(null)}
+        />
+      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@
 // the cursor, clamped into the viewport, closes on outside pointer-down / Escape / action.
 // Reuses the IndicatorContextMenu idiom (compact rows, theme tokens, lucide icons).
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { Check, ChevronRight, Columns3, Grid3x3, Layers, RotateCcw, Ruler, Settings } from "lucide-react";
+import { Check, ChevronRight, Clock, Columns3, Copy, Grid3x3, Layers, Maximize2, RotateCcw, Ruler, Settings } from "lucide-react";
 import { useStore } from "../store/useStore";
 import type { FootprintColorMatrix, FootprintColumns, FootprintSettings } from "../types/orderflow";
 import { FOOTPRINT_PRESETS } from "./footprintPresets";
@@ -68,7 +68,21 @@ const TOGGLES: { key: keyof FootprintSettings; label: string }[] = [
   { key: "showSdBands", label: "Show SD Bands" },
 ];
 
-export default function FootprintContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => void }) {
+export default function FootprintContextMenu({
+  x,
+  y,
+  price,
+  time,
+  onResetView,
+  onClose,
+}: {
+  x: number;
+  y: number;
+  price?: number | null;
+  time?: number | null;
+  onResetView?: () => void;
+  onClose: () => void;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: x, top: y });
   const [openLeft, setOpenLeft] = useState(false);
@@ -115,6 +129,27 @@ export default function FootprintContextMenu({ x, y, onClose }: { x: number; y: 
     fn();
     onClose();
   };
+  const copy = (text: string) =>
+    act(() => {
+      // writeText() rejects ASYNCHRONOUSLY (lost focus / permission / insecure origin); catch the
+      // promise too so a failed copy can never surface as an unhandled rejection in the console.
+      try {
+        void navigator.clipboard?.writeText(text)?.catch(() => {});
+      } catch {
+        /* clipboard API unavailable */
+      }
+    });
+  const timeStr =
+    time != null
+      ? new Date(time).toLocaleString("en-GB", {
+          timeZone: "Asia/Kolkata",
+          day: "2-digit",
+          month: "short",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        })
+      : "";
   const columns: FootprintColumns = settings.clusterColumns;
   const matrix: FootprintColorMatrix = settings.colorMatrix;
 
@@ -127,6 +162,9 @@ export default function FootprintContextMenu({ x, y, onClose }: { x: number; y: 
       onContextMenu={(e) => e.preventDefault()}
     >
       <Item icon={<Settings size={13} />} label="Edit Footprint Settings…" onClick={act(() => setFootprintSettingsOpen(true))} />
+      {price != null && <Item icon={<Copy size={13} />} label={`Copy price  ${price.toFixed(2)}`} onClick={copy(price.toFixed(2))} />}
+      {time != null && <Item icon={<Clock size={13} />} label={`Copy time  ${timeStr}`} onClick={copy(timeStr)} />}
+      {onResetView && <Item icon={<Maximize2 size={13} />} label="Reset chart view" onClick={act(() => onResetView())} />}
       <Divider />
       <Submenu icon={<Layers size={13} />} label="Apply Preset" openLeft={openLeft}>
         {FOOTPRINT_PRESETS.map((p) => (

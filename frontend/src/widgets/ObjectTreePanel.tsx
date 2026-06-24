@@ -12,8 +12,8 @@ import { formatIstDateTime } from "../lib/time";
 function Section({ title, extra, children }: { title: string; extra?: ReactNode; children: ReactNode }) {
   return (
     <div className="border-b border-terminal-border">
-      <div className="flex items-center justify-between bg-terminal-bg/40 px-3 py-1.5">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-terminal-muted">{title}</span>
+      <div className="flex items-center justify-between bg-terminal-bg/30 px-3 py-1.5">
+        <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-terminal-muted">{title}</span>
         {extra}
       </div>
       <div>{children}</div>
@@ -43,8 +43,8 @@ function IconBtn({
         e.stopPropagation();
         onClick();
       }}
-      className={`flex h-5 w-5 items-center justify-center rounded text-[11px] leading-none hover:bg-terminal-border ${
-        danger ? "text-flow-sellHi" : "text-terminal-muted hover:text-terminal-text"
+      className={`flex h-6 w-6 items-center justify-center rounded leading-none transition-colors hover:bg-terminal-border/40 ${
+        danger ? "text-flow-sellHi hover:text-flow-sellHi" : "text-terminal-muted hover:text-terminal-text"
       }`}
     >
       {children}
@@ -73,7 +73,7 @@ export default function ObjectTreePanel({ open, onClose }: { open: boolean; onCl
   return (
     <FloatingWindow
       id="object-tree"
-      title="◳ Objects"
+      title="Objects"
       open={open}
       onClose={onClose}
       defaultRect={{ w: 300, h: 440, x: undefined, y: 90 }}
@@ -142,23 +142,27 @@ export default function ObjectTreePanel({ open, onClose }: { open: boolean; onCl
                   i.id === selectedIndicatorId ? "bg-flow-exhaustion/15" : "hover:bg-terminal-border/50"
                 }`}
               >
-                <input
-                  type="checkbox"
-                  checked={i.enabled}
-                  onChange={() => toggleIndicator(i.id)}
-                  onClick={(e) => e.stopPropagation()}
-                  className="accent-flow-delta"
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={i.enabled}
+                  data-on={i.enabled}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleIndicator(i.id);
+                  }}
+                  className="switch"
                   title={i.enabled ? "Disable" : "Enable"}
                 />
                 <div className="min-w-0 flex-1">
                   <div className="truncate">{i.name}</div>
                   {anchorMs > 0 && (
-                    <div className="flex items-center gap-1 truncate text-[9px] text-terminal-muted">
-                      <Anchor size={9} /> {formatIstDateTime(anchorMs)} IST
+                    <div className="flex items-center gap-1 truncate text-[10px] text-terminal-muted">
+                      <Anchor size={10} /> {formatIstDateTime(anchorMs)} IST
                     </div>
                   )}
                 </div>
-                <span className="text-[9px] text-terminal-muted">{i.overlay ? "overlay" : "pane"}</span>
+                <span className="text-[10px] text-terminal-muted">{i.overlay ? "overlay" : "pane"}</span>
                 <IconBtn title="Remove" onClick={() => removeIndicator(i.id)} danger>
                   <X size={13} />
                 </IconBtn>
