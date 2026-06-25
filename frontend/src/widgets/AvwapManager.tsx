@@ -2,6 +2,7 @@
 // Lists every Anchored VWAP instance with hide/show + delete, plus "Add" and
 // "Clear all" — the discoverable deletion path the user was missing. Anchored VWAPs
 // are indicators under the hood, so hide = toggle enabled, delete = removeIndicator.
+import { Eye, EyeOff, Plus, Trash2, X } from "lucide-react";
 import { useStore } from "../store/useStore";
 import { formatIstDateTime } from "../lib/time";
 
@@ -20,13 +21,11 @@ export default function AvwapManager({ open, onClose }: { open: boolean; onClose
     <>
       {/* click-away catcher */}
       <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div className="absolute right-0 top-full z-50 mt-1 w-72 overflow-hidden rounded-lg border border-terminal-border bg-terminal-panel shadow-2xl shadow-black/50">
-        <div className="flex items-center justify-between border-b border-terminal-border bg-terminal-bg/40 px-3 py-1.5">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-terminal-muted">
-            Anchored VWAPs ({avs.length})
-          </span>
-          <button onClick={onClose} title="Close" className="text-sm leading-none text-terminal-muted hover:text-terminal-text">
-            ×
+      <div className="popover absolute right-0 top-full z-50 mt-1 w-72 overflow-hidden">
+        <div className="flex items-center justify-between border-b border-terminal-border bg-terminal-bg/30 px-3 py-1.5">
+          <span className="section-label">Anchored VWAPs · {avs.length}</span>
+          <button onClick={onClose} title="Close" className="row-icon-btn">
+            <X size={14} />
           </button>
         </div>
 
@@ -41,8 +40,8 @@ export default function AvwapManager({ open, onClose }: { open: boolean; onClose
             const anchorSym = String(a.inputs.anchorSymbol ?? "");
             const offSymbol = anchorSym && anchorSym !== symbol;
             return (
-              <div key={a.id} className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-terminal-border/40">
-                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: a.enabled ? "#f59e0b" : "#6b7785" }} />
+              <div key={a.id} className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-terminal-border/50">
+                <span className={`h-2 w-2 shrink-0 rounded-full ${a.enabled ? "bg-flow-exhaustion" : "bg-terminal-muted"}`} />
                 <div className="min-w-0 flex-1">
                   <div className={`truncate font-semibold ${a.enabled ? "text-terminal-text" : "text-terminal-muted"}`}>
                     {a.name}
@@ -55,19 +54,11 @@ export default function AvwapManager({ open, onClose }: { open: boolean; onClose
                         : "not anchored"}
                   </div>
                 </div>
-                <button
-                  onClick={() => toggleIndicator(a.id)}
-                  title={a.enabled ? "Hide" : "Show"}
-                  className="rounded px-1 text-[11px] text-terminal-muted hover:bg-terminal-border hover:text-terminal-text"
-                >
-                  {a.enabled ? "◉" : "○"}
+                <button onClick={() => toggleIndicator(a.id)} title={a.enabled ? "Hide" : "Show"} className="row-icon-btn">
+                  {a.enabled ? <Eye size={13} /> : <EyeOff size={13} />}
                 </button>
-                <button
-                  onClick={() => removeIndicator(a.id)}
-                  title="Delete"
-                  className="rounded px-1 text-[11px] text-flow-sellHi hover:bg-flow-sellHi/10"
-                >
-                  ×
+                <button onClick={() => removeIndicator(a.id)} title="Delete" className="row-icon-btn row-icon-btn-danger">
+                  <Trash2 size={13} />
                 </button>
               </div>
             );
@@ -80,14 +71,14 @@ export default function AvwapManager({ open, onClose }: { open: boolean; onClose
               beginAnchoredVwapPlacement();
               onClose();
             }}
-            className="rounded border border-terminal-border px-2 py-0.5 text-[11px] font-semibold text-flow-exhaustion hover:bg-terminal-border"
+            className="tbtn !text-flow-exhaustion"
           >
-            + Add
+            <Plus size={13} /> Add
           </button>
           <button
             onClick={() => removeAllAnchoredVwaps()}
             disabled={avs.length === 0}
-            className="rounded border border-flow-sellHi/40 px-2 py-0.5 text-[11px] font-semibold text-flow-sellHi hover:bg-flow-sellHi/10 disabled:cursor-not-allowed disabled:opacity-30"
+            className="tbtn !text-flow-sellHi hover:!border-flow-sell/50 hover:!bg-flow-sell/10"
           >
             Clear all
           </button>

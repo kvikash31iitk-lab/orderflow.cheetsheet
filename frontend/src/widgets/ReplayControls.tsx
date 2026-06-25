@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Pause, Play, SkipForward, Square } from "lucide-react";
 import { api } from "../api/rest";
 import { wsClient } from "../api/ws";
 import { useStore } from "../store/useStore";
@@ -28,37 +29,37 @@ export default function ReplayControls() {
 
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs">
-      <button onClick={load} className="rounded bg-terminal-border px-2 py-1 hover:bg-terminal-border/70">
+      <button onClick={load} className="rounded-md bg-terminal-border px-2 py-1 transition-colors hover:bg-terminal-border/70">
         Load 2h
       </button>
-      <span className="text-terminal-muted">{loaded ? `${loaded.toLocaleString()} ticks` : ""}</span>
-      <div className="flex items-center gap-1">
+      <span className="tabular-nums text-terminal-muted">{loaded ? `${loaded.toLocaleString()} ticks` : ""}</span>
+      <div className="flex items-center gap-0.5">
         {SPEEDS.map((s) => (
           <button
             key={s}
             onClick={() => setSpeed(s)}
-            className={`rounded px-1.5 py-0.5 ${speed === s ? "bg-flow-delta text-white" : "bg-terminal-border"}`}
+            className={`rounded-md px-1.5 py-0.5 transition-colors ${speed === s ? "bg-accent text-white" : "bg-terminal-border hover:bg-terminal-border/70"}`}
           >
             {s}x
           </button>
         ))}
       </div>
-      <button onClick={play} className="rounded bg-flow-buy px-2 py-1 text-white">
-        ▶
+      <button onClick={play} title="Play" className="flex items-center rounded-md bg-flow-buy px-2 py-1 text-white transition-colors hover:bg-flow-buyHi">
+        <Play size={13} />
       </button>
-      <button onClick={() => api.replayPause()} className="rounded bg-terminal-border px-2 py-1">
-        ❚❚
+      <button onClick={() => api.replayPause()} title="Pause" className="flex items-center rounded-md bg-terminal-border px-2 py-1 transition-colors hover:bg-terminal-border/70">
+        <Pause size={13} />
       </button>
-      <button onClick={() => api.replayStep()} className="rounded bg-terminal-border px-2 py-1">
-        ⏭ step
+      <button onClick={() => api.replayStep()} title="Step" className="flex items-center gap-1 rounded-md bg-terminal-border px-2 py-1 transition-colors hover:bg-terminal-border/70">
+        <SkipForward size={13} /> Step
       </button>
-      <button onClick={() => api.replayStop()} className="rounded bg-flow-sell px-2 py-1 text-white">
-        ■
+      <button onClick={() => api.replayStop()} title="Stop" className="flex items-center rounded-md bg-flow-sell px-2 py-1 text-white transition-colors hover:bg-flow-sellHi">
+        <Square size={12} />
       </button>
       {replay && (
         <div className="flex items-center gap-2">
           <div className="h-1.5 w-28 overflow-hidden rounded bg-terminal-border">
-            <div className="h-full bg-flow-delta" style={{ width: `${(replay.progress * 100).toFixed(1)}%` }} />
+            <div className="h-full bg-accent" style={{ width: `${(replay.progress * 100).toFixed(1)}%` }} />
           </div>
           <span className="text-terminal-muted">
             {replay.index}/{replay.total}

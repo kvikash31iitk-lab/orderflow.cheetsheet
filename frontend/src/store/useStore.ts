@@ -536,6 +536,7 @@ interface State {
   // dashboard layout (resizable panels)
   setLayout: (patch: Partial<DashboardLayout>) => void;
   resetLayout: (key: keyof DashboardLayout) => void;
+  resetAllLayout: () => void;
   reset: () => void;
 }
 
@@ -658,6 +659,11 @@ export const useStore = create<State>((set, get) => ({
   },
   resetLayout: (key) => {
     const next = { ...get().layout, [key]: DEFAULT_LAYOUT[key] };
+    set({ layout: next });
+    persistLayout(next);
+  },
+  resetAllLayout: () => {
+    const next = { ...DEFAULT_LAYOUT };
     set({ layout: next });
     persistLayout(next);
   },

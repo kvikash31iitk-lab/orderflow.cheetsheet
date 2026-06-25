@@ -1,4 +1,5 @@
 import { useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { RotateCcw } from "lucide-react";
 import { useStore, LAYOUT_BOUNDS } from "../store/useStore";
 import FootprintChart from "../charts/FootprintChart";
 import BlockSizeModal from "./BlockSizeModal";
@@ -81,6 +82,7 @@ export default function Dashboard() {
   const layout = useStore((s) => s.layout);
   const setLayout = useStore((s) => s.setLayout);
   const resetLayout = useStore((s) => s.resetLayout);
+  const resetAllLayout = useStore((s) => s.resetAllLayout);
 
   // global ";" shortcut -> open the block-size modal, unless an editable field is focused
   useEffect(() => {
@@ -142,6 +144,13 @@ export default function Dashboard() {
                     <PanelToggle label="Hist" on={showHist} set={setShowHist} />
                     <PanelToggle label="Cum" on={showCum} set={setShowCum} />
                     <PanelToggle label="Scan" on={showScanner} set={setShowScanner} />
+                    <button
+                      onClick={resetAllLayout}
+                      title="Reset panel layout to defaults"
+                      className="rounded p-1 text-terminal-muted transition-colors hover:bg-terminal-border/60 hover:text-terminal-text"
+                    >
+                      <RotateCcw size={12} />
+                    </button>
                   </div>
                   <ReplayControls />
                 </div>

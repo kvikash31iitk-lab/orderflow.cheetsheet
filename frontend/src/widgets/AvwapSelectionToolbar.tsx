@@ -27,7 +27,7 @@ export default function AvwapSelectionToolbar() {
 
   return (
     <div className="pointer-events-none absolute inset-x-0 top-14 z-20 flex justify-center">
-      <div className="pointer-events-auto flex items-center gap-2 rounded border border-terminal-border bg-terminal-panel/95 px-2 py-1 text-xs text-terminal-text shadow-lg shadow-black/40">
+      <div className="pointer-events-auto flex items-center gap-2 rounded-md border border-terminal-border bg-terminal-panel/95 px-2 py-1 text-xs text-terminal-text shadow-lg shadow-black/40">
         <span className="max-w-[150px] truncate text-[11px] font-semibold text-flow-exhaustion" title={indicator.name}>
           {indicator.name}
         </span>
@@ -39,17 +39,17 @@ export default function AvwapSelectionToolbar() {
         <button
           onClick={() => beginAnchorPick(indicator.id)}
           title="Re-anchor — then click a candle"
-          className="rounded border border-terminal-border px-2 py-0.5 text-[11px] text-terminal-muted hover:bg-terminal-border hover:text-terminal-text"
+          className="rounded-md border border-terminal-border px-2 py-0.5 text-[11px] text-terminal-muted transition-colors hover:bg-terminal-border/40 hover:text-terminal-text"
         >
           Re-anchor
         </button>
         <button
           onClick={() => updateIndicator(indicator.id, { inputs: { ...indicator.inputs, showBands: !showBands } })}
           title={showBands ? "Hide SD bands" : "Show SD bands"}
-          className={`rounded border px-2 py-0.5 text-[11px] ${
+          className={`rounded-md border px-2 py-0.5 text-[11px] ${
             showBands
               ? "border-flow-exhaustion/60 bg-flow-exhaustion/10 text-flow-exhaustion"
-              : "border-terminal-border text-terminal-muted hover:bg-terminal-border hover:text-terminal-text"
+              : "border-terminal-border text-terminal-muted transition-colors hover:bg-terminal-border/40 hover:text-terminal-text"
           }`}
         >
           Bands
@@ -57,14 +57,14 @@ export default function AvwapSelectionToolbar() {
         <button
           onClick={() => selectIndicator(null)}
           title="Deselect (Esc)"
-          className="rounded border border-terminal-border px-2 py-0.5 text-[11px] text-terminal-muted hover:bg-terminal-border hover:text-terminal-text"
+          className="rounded-md border border-terminal-border px-2 py-0.5 text-[11px] text-terminal-muted transition-colors hover:bg-terminal-border/40 hover:text-terminal-text"
         >
           Done
         </button>
         <button
           onClick={() => removeIndicator(indicator.id)}
           title="Delete this Anchored VWAP (Del)"
-          className="flex items-center gap-1 rounded border border-flow-sellHi/50 px-2 py-0.5 text-[11px] font-semibold text-flow-sellHi hover:bg-flow-sellHi/10"
+          className="flex items-center gap-1 rounded-md border border-flow-sellHi/50 px-2 py-0.5 text-[11px] font-semibold text-flow-sellHi hover:bg-flow-sellHi/10"
         >
           <Trash2 size={12} /> Delete
         </button>
