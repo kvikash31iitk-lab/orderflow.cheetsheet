@@ -138,26 +138,51 @@ body {
     @apply rounded text-[11px] text-terminal-muted transition-colors hover:text-terminal-text;
   }
 
-  /* Premium Trading Control buttons */
-  .btn-buy-mkt {
-    @apply bg-gradient-to-r from-flow-buy to-flow-buy/80 hover:from-flow-buyHi hover:to-flow-buy text-white font-semibold shadow-lg shadow-flow-buy/20 hover:shadow-flow-buyHi/30 active:scale-95 transition-all duration-150 rounded px-3 py-1.5 text-xs;
+  /* ---- DOM ladder (Phase 2B) ---- */
+  /* serious flat trade-action buttons (no gradient / glow / scale) */
+  .trade-btn {
+    @apply flex flex-col items-center justify-center rounded-md border py-1 leading-tight transition-colors;
   }
-  .btn-sell-mkt {
-    @apply bg-gradient-to-r from-flow-sell to-flow-sell/80 hover:from-flow-sellHi hover:to-flow-sell text-white font-semibold shadow-lg shadow-flow-sell/20 hover:shadow-flow-sellHi/30 active:scale-95 transition-all duration-150 rounded px-3 py-1.5 text-xs;
+  .trade-btn-buy {
+    @apply border-flow-buy bg-flow-buy text-white hover:border-flow-buyHi hover:bg-flow-buyHi;
   }
-  .btn-flatten {
-    @apply bg-gradient-to-r from-terminal-border to-terminal-border/80 hover:from-terminal-muted hover:to-terminal-border text-terminal-text font-semibold shadow-md active:scale-95 transition-all duration-150 rounded px-3 py-1.5 text-xs;
+  .trade-btn-sell {
+    @apply border-flow-sell bg-flow-sell text-white hover:border-flow-sellHi hover:bg-flow-sellHi;
   }
-  
-  /* DOM price ladder cell effects */
+  .trade-btn-flat {
+    @apply border-terminal-border-strong bg-terminal-elevated text-terminal-text hover:bg-terminal-border/60;
+  }
+  /* compact position / PnL stat chip */
+  .dom-stat {
+    @apply flex min-w-0 flex-col items-center justify-center rounded-md border px-1 py-1 leading-tight;
+  }
+  .dom-stat-label {
+    @apply text-[8.5px] font-semibold uppercase tracking-[0.06em] text-terminal-muted;
+  }
+  .dom-stat-value {
+    @apply max-w-full truncate text-[12px] font-bold tabular-nums;
+  }
+  /* qty quick-adjust button */
+  .dom-qty-btn {
+    @apply rounded-md border border-terminal-border/60 bg-terminal-panel px-1.5 py-0.5 text-[10px] font-semibold text-terminal-text transition-colors hover:border-terminal-border-strong hover:bg-terminal-border/40;
+  }
+  /* clickable depth cell (places a limit order) */
+  .dom-cell {
+    @apply relative cursor-pointer select-none overflow-hidden px-2 py-1 align-middle font-mono tabular-nums transition-colors;
+  }
   .dom-cell-bid {
-    @apply relative hover:bg-flow-buy/10 active:bg-flow-buy/20 transition-all duration-75 cursor-pointer select-none font-mono;
+    @apply hover:bg-flow-buy/10 active:bg-flow-buy/15;
   }
   .dom-cell-ask {
-    @apply relative hover:bg-flow-sell/10 active:bg-flow-sell/20 transition-all duration-75 cursor-pointer select-none font-mono;
+    @apply hover:bg-flow-sell/10 active:bg-flow-sell/15;
   }
-  .dom-cell-price {
-    @apply hover:bg-terminal-border/60 transition-all duration-75 cursor-pointer font-semibold font-mono text-center text-terminal-text;
+  /* centred price anchor cell (not clickable) */
+  .dom-price-cell {
+    @apply relative px-1.5 py-1 text-center align-middle font-mono font-bold tabular-nums;
+  }
+  /* proportional horizontal depth fill, clipped behind the number */
+  .dom-depth-bar {
+    @apply pointer-events-none absolute inset-y-0 transition-[width] duration-300;
   }
 }
 

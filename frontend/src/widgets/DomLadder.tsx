@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Clapperboard, Crosshair, Loader2 } from "lucide-react";
+import { Clapperboard, Crosshair, FlaskConical, Loader2, X } from "lucide-react";
 import { api } from "../api/rest";
 import { consolidatedRowSize } from "../lib/rowsize";
 import { useStore } from "../store/useStore";
@@ -101,14 +101,16 @@ export default function DomLadder() {
     orders.filter((o) => o.symbol === symbol && o.price != null && Math.abs(o.price - p) < rowSize / 2);
 
   const pnlColor = (v: number) => (v > 0 ? "text-flow-buyHi" : v < 0 ? "text-flow-sellHi" : "text-terminal-muted");
-  const pnlBg = (v: number) => (v > 0 ? "bg-flow-buy/10 border-flow-buy/30" : v < 0 ? "bg-flow-sell/10 border-flow-sell/30" : "bg-terminal-bg/50 border-terminal-border/60");
+  const pnlBg = (v: number) => (v > 0 ? "border-flow-buy/30 bg-flow-buy/10" : v < 0 ? "border-flow-sell/30 bg-flow-sell/10" : "border-terminal-border/60 bg-terminal-bg/40");
+  // signed PnL string; 0 collapses to a plain "0" (matches the previous inline logic)
+  const fmtPnl = (v: number) => (v === 0 ? "0" : `${v > 0 ? "+" : ""}${v.toFixed(0)}`);
 
   if (replayActive) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 rounded-md border border-terminal-border bg-terminal-bg p-6 text-center text-terminal-muted">
         <Clapperboard size={28} className="text-terminal-muted" />
-        <span className="font-semibold text-xs text-terminal-text uppercase tracking-wider">DOM Inactive in Replay Mode</span>
-        <p className="text-[10px] max-w-[200px] leading-normal font-sans">
+        <span className="text-xs font-semibold uppercase tracking-wider text-terminal-text">DOM Inactive in Replay Mode</span>
+        <p className="max-w-[200px] font-sans text-[10px] leading-normal">
           Simulated trading is locked while viewing historical replays. Exit Replay Mode to enable live DOM execution.
         </p>
       </div>
@@ -117,52 +119,53 @@ export default function DomLadder() {
 
   return (
     <div className="flex h-full flex-col bg-terminal-bg text-xs">
-      {/* Account Info Panel */}
-      <div className="grid grid-cols-3 gap-1.5 p-2 border-b border-terminal-border bg-terminal-panel/30">
-        <div className="bg-terminal-bg/40 border border-terminal-border/50 rounded p-1.5 flex flex-col items-center justify-center min-w-0">
-          <span className="text-[9px] uppercase tracking-wider text-terminal-muted">Position</span>
-          <span className={`text-xs font-bold truncate ${pos && pos.qty !== 0 ? (pos.qty > 0 ? "text-flow-buyHi" : "text-flow-sellHi") : "text-terminal-muted"}`}>
-            {pos && pos.qty !== 0 ? (
-              <span className="flex flex-col items-center">
-                <span>{pos.qty > 0 ? "LONG" : "SHORT"} {Math.abs(pos.qty)}</span>
-                <span className="text-[8px] text-terminal-muted font-mono">@ {pos.entryPrice?.toFixed(1)}</span>
-              </span>
-            ) : (
-              "FLAT"
-            )}
+      {/* Instrument + last price */}
+      <div className="flex shrink-0 items-center justify-between border-b border-terminal-border bg-terminal-panel/40 px-2.5 py-1">
+        <span className="truncate text-[11px] font-semibold tracking-wide text-terminal-text">{symbol}</span>
+        <span className="font-mono text-[11px] font-semibold tabular-nums text-terminal-text">{price != null ? price.toFixed(dp) : "—"}</span>
+      </div>
+
+      {/* Position / PnL strip */}
+      <div className="grid shrink-0 grid-cols-3 gap-1 border-b border-terminal-border bg-terminal-panel/20 p-1.5">
+        <div
+          className={`dom-stat ${
+            pos && pos.qty !== 0
+              ? pos.qty > 0
+                ? "border-flow-buy/30 bg-flow-buy/10"
+                : "border-flow-sell/30 bg-flow-sell/10"
+              : "border-terminal-border/60 bg-terminal-bg/40"
+          }`}
+        >
+          <span className="dom-stat-label">Position</span>
+          <span
+            className={`dom-stat-value ${
+              pos && pos.qty !== 0 ? (pos.qty > 0 ? "text-flow-buyHi" : "text-flow-sellHi") : "text-terminal-muted"
+            }`}
+          >
+            {pos && pos.qty !== 0 ? `${pos.qty > 0 ? "LONG" : "SHORT"} ${Math.abs(pos.qty)}` : "FLAT"}
+          </span>
+          <span className="text-[8px] leading-none tabular-nums text-terminal-muted">
+            {pos && pos.qty !== 0 && pos.entryPrice != null ? `@ ${pos.entryPrice.toFixed(dp)}` : " "}
           </span>
         </div>
 
-        <div className={`border rounded p-1.5 flex flex-col items-center justify-center min-w-0 transition-colors ${pnlBg(pos?.unrealisedPnl ?? 0)}`}>
-          <span className="text-[9px] uppercase tracking-wider text-terminal-muted">Open PnL</span>
-          <span className={`text-xs font-bold truncate ${pnlColor(pos?.unrealisedPnl ?? 0)}`}>
-            {pos?.unrealisedPnl != null && pos.unrealisedPnl !== 0 ? (
-              `${pos.unrealisedPnl > 0 ? "+" : ""}${pos.unrealisedPnl.toFixed(0)}`
-            ) : (
-              "0"
-            )}
-          </span>
+        <div className={`dom-stat ${pnlBg(pos?.unrealisedPnl ?? 0)}`}>
+          <span className="dom-stat-label">Open PnL</span>
+          <span className={`dom-stat-value ${pnlColor(pos?.unrealisedPnl ?? 0)}`}>{fmtPnl(pos?.unrealisedPnl ?? 0)}</span>
         </div>
 
-        <div className={`border rounded p-1.5 flex flex-col items-center justify-center min-w-0 transition-colors ${pnlBg(pos?.realisedPnl ?? 0)}`}>
-          <span className="text-[9px] uppercase tracking-wider text-terminal-muted font-medium">Realised</span>
-          <span className={`text-xs font-bold truncate ${pnlColor(pos?.realisedPnl ?? 0)}`}>
-            {pos?.realisedPnl != null && pos.realisedPnl !== 0 ? (
-              `${pos.realisedPnl > 0 ? "+" : ""}${pos.realisedPnl.toFixed(0)}`
-            ) : (
-              "0"
-            )}
-          </span>
+        <div className={`dom-stat ${pnlBg(pos?.realisedPnl ?? 0)}`}>
+          <span className="dom-stat-label">Realised</span>
+          <span className={`dom-stat-value ${pnlColor(pos?.realisedPnl ?? 0)}`}>{fmtPnl(pos?.realisedPnl ?? 0)}</span>
         </div>
       </div>
 
-      {/* Trading Controls Panel */}
-      <div className="flex flex-col gap-2.5 p-2 border-b border-terminal-border bg-terminal-panel/20">
-        {/* Quantity Controller & Center Button */}
+      {/* Qty + market actions */}
+      <div className="flex shrink-0 flex-col gap-2 border-b border-terminal-border bg-terminal-panel/20 p-2">
         <div className="flex items-center justify-between gap-1.5">
           <div className="flex items-center gap-1.5">
-            <span className="text-[9px] uppercase tracking-wider text-terminal-muted font-bold">Qty</span>
-            <button 
+            <span className="text-[9px] font-bold uppercase tracking-wider text-terminal-muted">Qty</span>
+            <button
               onClick={() => {
                 if (price != null) {
                   setLadderMid(Math.round(price / rowSize) * rowSize);
@@ -170,36 +173,31 @@ export default function DomLadder() {
                 const el = scrollRef.current;
                 if (el) el.scrollTop = (el.scrollHeight - el.clientHeight) / 2;
               }}
-              className="flex items-center gap-0.5 rounded-md border border-terminal-border bg-terminal-panel px-1.5 py-0.5 text-[9px] font-bold uppercase text-terminal-text transition-colors hover:border-terminal-border-strong hover:bg-terminal-border/40"
-              title="Recenter Ladder on Last Price"
+              className="dom-qty-btn flex items-center gap-1 uppercase"
+              title="Recenter ladder on last price"
             >
               <Crosshair size={11} /> Center
             </button>
           </div>
-          
-          <div className="flex items-center gap-1 flex-1 justify-end max-w-[170px]">
+
+          <div className="flex items-center gap-1">
             <input
               type="number"
               min={1}
               value={qty}
               onChange={(e) => setQty(Math.max(1, Number(e.target.value) || 1))}
-              className="tinput w-11 px-1 !text-center font-bold"
+              className="tinput w-12 px-1 !text-center font-bold"
             />
-            {/* Quick buttons */}
             <div className="flex gap-0.5">
               {[1, 5, 10, 50].map((q) => (
-                <button
-                  key={q}
-                  onClick={() => setQty((prev) => prev + q)}
-                  className="rounded-md border border-terminal-border/60 bg-terminal-panel px-1 py-0.5 text-[9px] font-semibold text-terminal-text transition-colors hover:border-terminal-border-strong hover:bg-terminal-border/40"
-                >
+                <button key={q} onClick={() => setQty((prev) => prev + q)} className="dom-qty-btn">
                   +{q}
                 </button>
               ))}
               <button
                 onClick={() => setQty(1)}
-                className="rounded-md border border-terminal-border/60 bg-terminal-panel px-1.5 py-0.5 text-[9px] font-bold text-flow-sellHi transition-colors hover:border-flow-sell/50 hover:bg-flow-sell/20"
-                title="Reset Qty to 1"
+                className="dom-qty-btn !text-flow-sellHi hover:!border-flow-sell/50 hover:!bg-flow-sell/15"
+                title="Reset qty to 1"
               >
                 C
               </button>
@@ -207,41 +205,37 @@ export default function DomLadder() {
           </div>
         </div>
 
-        {/* Market Actions Grid */}
         <div className="grid grid-cols-3 gap-1">
-          <button onClick={() => market("buy")} className="btn-buy-mkt flex flex-col items-center py-1 rounded">
+          <button onClick={() => market("buy")} className="trade-btn trade-btn-buy">
             <span className="text-[10px] font-bold tracking-wide">BUY MKT</span>
-            <span className="text-[8px] opacity-75 font-normal uppercase">Join Ask</span>
+            <span className="text-[8px] font-normal uppercase opacity-80">Join Ask</span>
           </button>
-          <button onClick={() => market("sell")} className="btn-sell-mkt flex flex-col items-center py-1 rounded">
+          <button onClick={() => market("sell")} className="trade-btn trade-btn-sell">
             <span className="text-[10px] font-bold tracking-wide">SELL MKT</span>
-            <span className="text-[8px] opacity-75 font-normal uppercase">Join Bid</span>
+            <span className="text-[8px] font-normal uppercase opacity-80">Join Bid</span>
           </button>
-          <button 
-            onClick={() => api.tradeFlatten(symbol).catch(() => {})} 
-            className="btn-flatten flex flex-col items-center justify-center py-1 rounded"
-          >
+          <button onClick={() => api.tradeFlatten(symbol).catch(() => {})} className="trade-btn trade-btn-flat">
             <span className="text-[10px] font-bold tracking-wide">FLATTEN</span>
-            <span className="text-[8px] opacity-75 font-normal uppercase">Close All</span>
+            <span className="text-[8px] font-normal uppercase opacity-70">Close All</span>
           </button>
         </div>
       </div>
 
-      {/* Ladder Container */}
+      {/* Ladder */}
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
         {price == null ? (
-          <div className="p-4 text-center text-terminal-muted font-sans flex flex-col items-center justify-center gap-2">
+          <div className="flex flex-col items-center justify-center gap-2 p-4 text-center font-sans text-terminal-muted">
             <Loader2 size={16} className="animate-spin text-terminal-muted" />
-            <span>Waiting for market ticks...</span>
+            <span>Waiting for market ticks…</span>
           </div>
         ) : (
-          <table className="w-full border-collapse text-right font-mono table-fixed">
-            <thead className="sticky top-0 bg-terminal-panel/90 backdrop-blur-sm z-30 text-[9px] uppercase tracking-wider text-terminal-muted border-b border-terminal-border">
+          <table className="w-full table-fixed border-collapse text-right font-mono">
+            <thead className="sticky top-0 z-30 border-b border-terminal-border bg-terminal-panel/95 text-[9px] uppercase tracking-wider text-terminal-muted backdrop-blur-sm">
               <tr>
-                <th className="px-2.5 py-1.5 text-right font-semibold w-[30%] border-r border-terminal-border/20">Bid Depth</th>
-                <th className="px-1.5 py-1.5 text-center font-semibold w-[28%] bg-terminal-bg/20">Price</th>
-                <th className="px-2.5 py-1.5 text-left font-semibold w-[30%] border-l border-terminal-border/20">Ask Depth</th>
-                <th className="px-1.5 py-1.5 text-left font-semibold w-[12%]">Orders</th>
+                <th className="w-[30%] px-2 py-1.5 text-right font-semibold">Bid</th>
+                <th className="w-[28%] px-1.5 py-1.5 text-center font-semibold">Price</th>
+                <th className="w-[30%] px-2 py-1.5 text-left font-semibold">Ask</th>
+                <th className="w-[12%] px-1.5 py-1.5 text-left font-semibold">Ord</th>
               </tr>
             </thead>
             <tbody>
@@ -251,114 +245,107 @@ export default function DomLadder() {
                 const isEntryPrice = pos && pos.qty !== 0 && pos.entryPrice != null && Math.abs(r.price - pos.entryPrice) < rowSize / 2;
 
                 return (
-                  <tr 
-                    key={r.price} 
-                    className={`border-t border-terminal-border/10 transition-colors duration-100 group ${
-                      atMid 
-                        ? "bg-flow-delta/5 hover:bg-flow-delta/10" 
-                        : isEntryPrice 
-                          ? (pos.qty > 0 ? "bg-flow-buy/5 hover:bg-flow-buy/10" : "bg-flow-sell/5 hover:bg-flow-sell/10")
+                  <tr
+                    key={r.price}
+                    className={`border-t border-terminal-border/10 transition-colors duration-100 ${
+                      atMid
+                        ? "bg-accent/[0.07]"
+                        : isEntryPrice
+                          ? pos.qty > 0
+                            ? "bg-flow-buy/[0.06]"
+                            : "bg-flow-sell/[0.06]"
                           : "hover:bg-terminal-border/20"
                     }`}
                   >
-                    {/* Bid Depth Column */}
-                    <td 
+                    {/* Bid depth (click = buy limit) */}
+                    <td
                       onClick={() => placeLimit(r.price, false)}
-                      className="dom-cell-bid px-2.5 py-1 text-right select-none relative group/cell border-r border-terminal-border/10 overflow-hidden"
+                      className="dom-cell dom-cell-bid group/cell text-right"
                       title={`Place Buy Limit ${qty} @ ${r.price}`}
                     >
-                      {/* Depth Bar Background */}
                       {r.bidSize > 0 && (
-                        <div 
-                          className="absolute right-0 top-0 bottom-0 bg-flow-buy/15 border-r border-flow-buy/30 transition-all duration-300 pointer-events-none"
+                        <div
+                          className="dom-depth-bar right-0 border-l border-flow-buy/30 bg-flow-buy/15"
                           style={{ width: `${(r.bidSize / maxBidSize) * 100}%` }}
                         />
                       )}
-                      <span className="relative z-10 font-bold text-flow-buyHi text-[11px]">
-                        {r.bidSize || ""}
-                      </span>
-                      {/* Hover action indicator */}
-                      <span className="absolute left-1.5 top-1 z-20 text-[7px] font-bold text-flow-buyHi opacity-0 group-hover/cell:opacity-100 transition-opacity bg-flow-buy/20 px-1 rounded uppercase tracking-tighter">
-                        Buy Limit
+                      <span className="relative z-10 font-semibold text-flow-buyHi">{r.bidSize || ""}</span>
+                      <span className="absolute left-1 top-1/2 z-20 hidden -translate-y-1/2 rounded bg-flow-buy/20 px-1 text-[7px] font-bold uppercase tracking-tight text-flow-buyHi group-hover/cell:block">
+                        Buy
                       </span>
                     </td>
 
-                    {/* Price Column */}
-                    <td 
-                      className={`px-1.5 py-1 text-center relative font-bold text-[11px] ${
+                    {/* Price (anchor) */}
+                    <td
+                      className={`dom-price-cell ${
                         atMid
-                          ? "text-terminal-text bg-flow-delta/20 border-y border-flow-delta/40"
-                          : isEntryPrice 
-                            ? (pos.qty > 0 ? "text-flow-buyHi font-black" : "text-flow-sellHi font-black") 
+                          ? "border-y border-accent/40 bg-accent/15 text-terminal-text"
+                          : isEntryPrice
+                            ? pos.qty > 0
+                              ? "text-flow-buyHi"
+                              : "text-flow-sellHi"
                             : "text-terminal-text"
                       }`}
                     >
                       {r.price.toFixed(dp)}
-                      
-                      {/* Midprice indicator dot */}
-                      {atMid && (
-                        <span className="absolute right-1 top-[7px] h-1.5 w-1.5 rounded-full bg-flow-delta" />
-                      )}
-
-                      {/* Position average entry badge */}
+                      {atMid && <span className="absolute right-1 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-accent" />}
                       {isEntryPrice && (
-                        <span 
-                          className={`absolute left-0.5 top-1 z-20 text-[7px] font-bold uppercase px-0.5 rounded leading-none ${
-                            pos.qty > 0 ? "bg-flow-buy text-white border border-flow-buyHi/30" : "bg-flow-sell text-white border border-flow-sellHi/30"
+                        <span
+                          className={`absolute left-0.5 top-1/2 z-20 -translate-y-1/2 rounded px-0.5 text-[7px] font-bold uppercase leading-none text-white ${
+                            pos.qty > 0 ? "bg-flow-buy" : "bg-flow-sell"
                           }`}
-                          title={`Average Entry Price: ${pos.entryPrice}`}
+                          title={`Average entry price: ${pos.entryPrice}`}
                         >
                           {pos.qty > 0 ? "L" : "S"}
                         </span>
                       )}
                     </td>
 
-                    {/* Ask Depth Column */}
-                    <td 
+                    {/* Ask depth (click = sell limit) */}
+                    <td
                       onClick={() => placeLimit(r.price, true)}
-                      className="dom-cell-ask px-2.5 py-1 text-left select-none relative group/cell border-l border-terminal-border/10 overflow-hidden"
+                      className="dom-cell dom-cell-ask group/cell text-left"
                       title={`Place Sell Limit ${qty} @ ${r.price}`}
                     >
-                      {/* Depth Bar Background */}
                       {r.askSize > 0 && (
-                        <div 
-                          className="absolute left-0 top-0 bottom-0 bg-flow-sell/15 border-l border-flow-sell/30 transition-all duration-300 pointer-events-none"
+                        <div
+                          className="dom-depth-bar left-0 border-r border-flow-sell/30 bg-flow-sell/15"
                           style={{ width: `${(r.askSize / maxAskSize) * 100}%` }}
                         />
                       )}
-                      <span className="relative z-10 font-bold text-flow-sellHi text-[11px]">
-                        {r.askSize || ""}
-                      </span>
-                      {/* Hover action indicator */}
-                      <span className="absolute right-1.5 top-1 z-20 text-[7px] font-bold text-flow-sellHi opacity-0 group-hover/cell:opacity-100 transition-opacity bg-flow-sell/20 px-1 rounded uppercase tracking-tighter">
-                        Sell Limit
+                      <span className="relative z-10 font-semibold text-flow-sellHi">{r.askSize || ""}</span>
+                      <span className="absolute right-1 top-1/2 z-20 hidden -translate-y-1/2 rounded bg-flow-sell/20 px-1 text-[7px] font-bold uppercase tracking-tight text-flow-sellHi group-hover/cell:block">
+                        Sell
                       </span>
                     </td>
 
-                    {/* Working Orders Column */}
-                    <td className="px-1.5 py-1 text-left relative overflow-visible">
-                      {myOrders.map((o) => (
-                        <span 
-                          key={o.id} 
-                          className={`inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[8px] font-bold shadow-sm border ${
-                            o.side === "buy" 
-                              ? "bg-flow-buy/20 border-flow-buy/40 text-flow-buyHi" 
-                              : "bg-flow-sell/20 border-flow-sell/40 text-flow-sellHi"
-                          }`}
-                        >
-                          <span>{o.side === "buy" ? "B" : "S"}{o.qty}</span>
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              cancel(o.id);
-                            }} 
-                            className="rounded px-0.5 text-[9px] font-bold leading-none text-terminal-muted transition-colors hover:bg-terminal-border/60 hover:text-terminal-text"
-                            title="Cancel Order"
+                    {/* Working orders */}
+                    <td className="px-1 py-1 text-left align-middle">
+                      <div className="flex flex-wrap gap-0.5">
+                        {myOrders.map((o) => (
+                          <span
+                            key={o.id}
+                            className={`inline-flex items-center gap-0.5 rounded border px-1 py-px text-[8px] font-bold tabular-nums ${
+                              o.side === "buy"
+                                ? "border-flow-buy/40 bg-flow-buy/15 text-flow-buyHi"
+                                : "border-flow-sell/40 bg-flow-sell/15 text-flow-sellHi"
+                            }`}
                           >
-                            ×
-                          </button>
-                        </span>
-                      ))}
+                            {o.side === "buy" ? "B" : "S"}
+                            {o.qty}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                cancel(o.id);
+                              }}
+                              className="row-icon-btn !h-3.5 !w-3.5"
+                              title="Cancel order"
+                            >
+                              <X size={9} strokeWidth={2.5} />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -367,8 +354,12 @@ export default function DomLadder() {
           </table>
         )}
       </div>
-      <div className="border-t border-terminal-border bg-terminal-panel/20 px-2.5 py-1.5 text-[9px] text-terminal-muted flex items-center justify-between font-sans">
-        <span>Simulated (paper) trading mode</span>
+
+      {/* Footer / status */}
+      <div className="flex shrink-0 items-center justify-between gap-2 border-t border-terminal-border bg-terminal-panel/20 px-2.5 py-1 text-[9px] text-terminal-muted">
+        <span className="flex items-center gap-1">
+          <FlaskConical size={10} /> Simulated · paper trading
+        </span>
         <span>No real risk</span>
       </div>
     </div>
