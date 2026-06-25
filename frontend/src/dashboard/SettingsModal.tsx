@@ -6,6 +6,7 @@ import {
   type FootprintColumns,
   type FootprintMode,
   type FootprintSettings,
+  type FootprintTextDensity,
   type FootprintTextFormat,
 } from "../types/orderflow";
 import FloatingWindow from "../components/FloatingWindow";
@@ -232,6 +233,17 @@ export default function SettingsModal({ open, onClose }: { open: boolean; onClos
                 <NumberField value={settings.fixedFontSize} min={6} max={13} onChange={(v) => set({ fixedFontSize: Math.max(6, Math.min(13, Math.round(v) || 10)) })} />
               </Field>
             )}
+            <Field label="Text density" tip="Auto: full label when it fits, else compact, else hidden · Compact: denser · Full: full labels only, else hidden">
+              <Seg
+                value={settings.textDensity}
+                onChange={(v) => set({ textDensity: v as FootprintTextDensity })}
+                options={[
+                  { value: "auto", label: "Auto" },
+                  { value: "compact", label: "Compact" },
+                  { value: "full", label: "Full" },
+                ]}
+              />
+            </Field>
             <Field label="Show Profile" tip="Per-row volume bar inside each cell">
               <Toggle on={settings.showProfile} onChange={(v) => set({ showProfile: v })} />
             </Field>

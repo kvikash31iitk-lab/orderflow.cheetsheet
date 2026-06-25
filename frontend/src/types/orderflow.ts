@@ -39,6 +39,10 @@ export const FOOTPRINT_TEXT_FORMATS: FootprintFormatDef[] = [
   { value: "bidAskPlain", label: "Bid Ask", supported: true },
 ];
 
+// Footprint cluster text density: "auto" = full label when it fits, else compact, else hide;
+// "compact" = always prefer the compact form (denser); "full" = full labels only, else hide.
+export type FootprintTextDensity = "auto" | "compact" | "full";
+
 // User-tunable footprint rendering settings (Settings modal -> store -> renderer).
 export interface FootprintSettings {
   tickMultiplier: number;      // base tick-size grouping applied client-side (1,2,5,10)
@@ -63,6 +67,7 @@ export interface FootprintSettings {
   colorMatrix: FootprintColorMatrix;
   autoFontSize: boolean;       // true -> adaptive text; false -> fixedFontSize (still clipped)
   fixedFontSize: number;
+  textDensity: FootprintTextDensity; // view-uniform label density (auto / compact / full)
   showProfile: boolean;        // horizontal volume-profile bar inside each cell
 
   // LEFT / RIGHT cluster (double-column). Colors "" -> theme palette default.

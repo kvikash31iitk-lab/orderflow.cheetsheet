@@ -84,6 +84,7 @@ export const DEFAULT_SETTINGS: FootprintSettings = {
   colorMatrix: "default",
   autoFontSize: true,
   fixedFontSize: 10,
+  textDensity: "auto",
   showProfile: false,
   leftFormat: "sellVolume",
   rightFormat: "buyVolume",
@@ -358,6 +359,7 @@ const SETTINGS_NUMERIC_KEYS: ReadonlyArray<keyof FootprintSettings> = [
 const SETTINGS_STRING_KEYS: ReadonlyArray<keyof FootprintSettings> = [
   "clusterColumns",
   "colorMatrix",
+  "textDensity",
   "leftFormat",
   "rightFormat",
   "leftTextColor",

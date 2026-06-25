@@ -86,6 +86,7 @@ const DEFAULT_SETTINGS: FootprintSettings = {
   colorMatrix: "default",
   autoFontSize: true,
   fixedFontSize: 10,
+  textDensity: "auto",
   showProfile: false,
   leftFormat: "sellVolume",
   rightFormat: "buyVolume",
@@ -714,6 +715,20 @@ class FootprintSeriesRenderer implements ICustomSeriesPaneRenderer {
         : Math.min(MAX_CELL_FONT, Math.floor(rowH - 2));
     if (fontH < MIN_CELL_FONT) return hidden;
 
+    // density lever (all branches still yield ONE uniform font + mode for the whole view):
+    //  full    = only ever show full labels; hide if they don't fit (no compact fallback)
+    //  compact = always use the compact form, then one uniform shrink, then hide
+    //  auto    = full when it fits, else compact, else one uniform shrink, else hide (default)
+    const density = S.textDensity ?? "auto";
+    if (density === "full") {
+      return measuredWidth(ctx, fontH, longestFull) <= availW ? { mode: "full", fontPx: fontH } : hidden;
+    }
+    if (density === "compact") {
+      const cwC = measuredWidth(ctx, fontH, longestCompact);
+      if (cwC <= availW) return { mode: "compact", fontPx: fontH };
+      const shrunkC = Math.floor(fontH * (availW / cwC));
+      return shrunkC >= MIN_CELL_FONT ? { mode: "compact", fontPx: shrunkC } : hidden;
+    }
     if (measuredWidth(ctx, fontH, longestFull) <= availW) return { mode: "full", fontPx: fontH };
     const cw = measuredWidth(ctx, fontH, longestCompact);
     if (cw <= availW) return { mode: "compact", fontPx: fontH };

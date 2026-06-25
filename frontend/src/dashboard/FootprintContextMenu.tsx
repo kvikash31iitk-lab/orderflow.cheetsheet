@@ -2,7 +2,7 @@
 // the cursor, clamped into the viewport, closes on outside pointer-down / Escape / action.
 // Reuses the IndicatorContextMenu idiom (compact rows, theme tokens, lucide icons).
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { Check, ChevronRight, Clock, Columns3, Copy, Grid3x3, Layers, Maximize2, RotateCcw, Ruler, Settings } from "lucide-react";
+import { CandlestickChart, Check, ChevronRight, Clock, Columns3, Copy, Grid3x3, Layers, LayoutGrid, Maximize2, RotateCcw, Ruler, Settings } from "lucide-react";
 import { useStore } from "../store/useStore";
 import type { FootprintColorMatrix, FootprintColumns, FootprintSettings } from "../types/orderflow";
 import { FOOTPRINT_PRESETS } from "./footprintPresets";
@@ -92,6 +92,8 @@ export default function FootprintContextMenu({
   const setFootprintMode = useStore((s) => s.setFootprintMode);
   const setFootprintSettingsOpen = useStore((s) => s.setFootprintSettingsOpen);
   const setBlockSizeModalOpen = useStore((s) => s.setBlockSizeModalOpen);
+  const chartDisplayMode = useStore((s) => s.chartDisplayMode);
+  const setChartDisplayMode = useStore((s) => s.setChartDisplayMode);
 
   // clamp into the viewport (flip near edges); flyouts open left when near the right edge
   useLayoutEffect(() => {
@@ -163,7 +165,15 @@ export default function FootprintContextMenu({
       <Item icon={<Settings size={13} />} label="Edit Footprint Settings…" onClick={act(() => setFootprintSettingsOpen(true))} />
       {price != null && <Item icon={<Copy size={13} />} label={`Copy price  ${price.toFixed(2)}`} onClick={copy(price.toFixed(2))} />}
       {time != null && <Item icon={<Clock size={13} />} label={`Copy time  ${timeStr}`} onClick={copy(timeStr)} />}
+      {price != null && time != null && (
+        <Item icon={<Copy size={13} />} label="Copy price + time" onClick={copy(`${price.toFixed(2)}  ${timeStr}`)} />
+      )}
       {onResetView && <Item icon={<Maximize2 size={13} />} label="Reset chart view" onClick={act(() => onResetView())} />}
+      <Item
+        icon={chartDisplayMode === "footprint" ? <CandlestickChart size={13} /> : <LayoutGrid size={13} />}
+        label={chartDisplayMode === "footprint" ? "Show as candles" : "Show footprint"}
+        onClick={act(() => setChartDisplayMode(chartDisplayMode === "footprint" ? "candle" : "footprint"))}
+      />
       <Divider />
       <Submenu icon={<Layers size={13} />} label="Apply Preset" openLeft={openLeft}>
         {FOOTPRINT_PRESETS.map((p) => (
