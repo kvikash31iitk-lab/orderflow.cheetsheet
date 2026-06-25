@@ -70,7 +70,7 @@ export default function Splitter({
       {/* the only painted pixels: a 1px hairline; subtle accent on hover/drag */}
       <span
         className={`pointer-events-none transition-colors ${isX ? "h-full w-px" : "h-px w-full"} ${
-          dragging ? "bg-flow-delta/70" : "bg-terminal-border group-hover:bg-flow-delta/50"
+          dragging ? "bg-accent/70" : "bg-terminal-border group-hover:bg-accent/50"
         }`}
       />
     </div>

@@ -44,8 +44,8 @@ function Tabs({ view, setView }: { view: View; setView: (v: View) => void }) {
         <button
           key={t.id}
           onClick={() => setView(t.id)}
-          className={`rounded px-3 py-1 text-xs font-medium ${
-            view === t.id ? "bg-flow-delta text-white" : "text-terminal-muted hover:bg-terminal-border"
+          className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+            view === t.id ? "bg-accent text-white" : "text-terminal-muted hover:bg-terminal-border/60 hover:text-terminal-text"
           }`}
         >
           {t.label}
@@ -60,8 +60,8 @@ function PanelToggle({ label, on, set }: { label: string; on: boolean; set: Disp
     <button
       onClick={() => set((v) => !v)}
       title={`${on ? "Hide" : "Show"} ${label}`}
-      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
-        on ? "bg-flow-delta text-white" : "bg-terminal-border text-terminal-muted"
+      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors ${
+        on ? "bg-accent text-white" : "bg-terminal-border/60 text-terminal-muted hover:text-terminal-text"
       }`}
     >
       {label}

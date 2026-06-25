@@ -13,7 +13,7 @@ function Section({ title, extra, children }: { title: string; extra?: ReactNode;
   return (
     <div className="border-b border-terminal-border">
       <div className="flex items-center justify-between bg-terminal-bg/30 px-3 py-1.5">
-        <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-terminal-muted">{title}</span>
+        <span className="section-label">{title}</span>
         {extra}
       </div>
       <div>{children}</div>
@@ -43,9 +43,7 @@ function IconBtn({
         e.stopPropagation();
         onClick();
       }}
-      className={`flex h-6 w-6 items-center justify-center rounded leading-none transition-colors hover:bg-terminal-border/40 ${
-        danger ? "text-flow-sellHi hover:text-flow-sellHi" : "text-terminal-muted hover:text-terminal-text"
-      }`}
+      className={`row-icon-btn ${danger ? "row-icon-btn-danger" : ""}`}
     >
       {children}
     </button>
@@ -86,10 +84,7 @@ export default function ObjectTreePanel({ open, onClose }: { open: boolean; onCl
           title={`Drawings · ${symbol}`}
           extra={
             symDrawings.length ? (
-              <button
-                onClick={() => clearDrawings(symbol)}
-                className="text-[10px] text-terminal-muted hover:text-flow-sellHi"
-              >
+              <button onClick={() => clearDrawings(symbol)} className="tbtn-link hover:text-flow-sellHi">
                 clear all
               </button>
             ) : null

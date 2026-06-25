@@ -53,11 +53,11 @@ export default function Scanner() {
               <td className="px-2 py-1 font-semibold">
                 {r.symbol} <span className="text-[10.5px] font-normal text-terminal-muted">({r.timeframe})</span>
               </td>
-              <td className={`px-2 py-1 text-right ${r.delta >= 0 ? "text-flow-buyHi" : "text-flow-sellHi"}`}>
+              <td className={`px-2 py-1 text-right tabular-nums ${r.delta >= 0 ? "text-flow-buyHi" : "text-flow-sellHi"}`}>
                 {r.delta >= 0 ? "+" : ""}
                 {Math.round(r.delta)}
               </td>
-              <td className={`px-2 py-1 text-right ${r.cumDelta >= 0 ? "text-flow-buyHi" : "text-flow-sellHi"}`}>
+              <td className={`px-2 py-1 text-right tabular-nums ${r.cumDelta >= 0 ? "text-flow-buyHi" : "text-flow-sellHi"}`}>
                 {Math.round(r.cumDelta)}
               </td>
               <td className="px-2 py-1 text-terminal-muted">{r.trend ?? "—"}</td>

@@ -9,14 +9,9 @@ import { useStore } from "../store/useStore";
 
 function Item({ icon, label, onClick, danger }: { icon: ReactNode; label: string; onClick: () => void; danger?: boolean }) {
   return (
-    <button
-      onClick={onClick}
-      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs ${
-        danger ? "text-flow-sellHi hover:bg-flow-sellHi/10" : "text-terminal-text hover:bg-terminal-border/60"
-      }`}
-    >
+    <button onClick={onClick} className={`menu-item ${danger ? "menu-item-danger" : ""}`}>
       <span className="flex w-4 shrink-0 justify-center text-terminal-muted">{icon}</span>
-      <span className="truncate">{label}</span>
+      <span className="flex-1 truncate">{label}</span>
     </button>
   );
 }
@@ -90,7 +85,7 @@ export default function IndicatorContextMenu({
   return (
     <div
       ref={ref}
-      className="fixed z-[120] min-w-[176px] overflow-hidden rounded-md border border-terminal-border bg-terminal-panel py-1 shadow-2xl shadow-black/50"
+      className="popover fixed z-[120] min-w-[176px] overflow-hidden py-1"
       style={{ left: pos.left, top: pos.top }}
       onPointerDown={(e) => e.stopPropagation()}
     >
@@ -101,7 +96,7 @@ export default function IndicatorContextMenu({
         label={ind.enabled ? "Hide" : "Show"}
         onClick={act(() => toggleIndicator(indicatorId))}
       />
-      <div className="my-1 h-px bg-terminal-border" />
+      <div className="menu-sep" />
       <Item icon={<Pencil size={13} />} label="Rename…" onClick={act(() => {
         const name = window.prompt("Indicator name:", ind.name);
         if (name && name.trim()) renameIndicator(indicatorId, name);
@@ -115,13 +110,13 @@ export default function IndicatorContextMenu({
         }
       })} />
       <Item icon={<RotateCcw size={13} />} label="Reset settings to defaults" onClick={act(() => resetIndicatorInputs(indicatorId))} />
-      <div className="my-1 h-px bg-terminal-border" />
+      <div className="menu-sep" />
       {idx > 0 && <Item icon={<ArrowUp size={13} />} label="Move up" onClick={act(() => moveIndicator(indicatorId, -1))} />}
       {idx >= 0 && idx < indicators.length - 1 && (
         <Item icon={<ArrowDown size={13} />} label="Move down" onClick={act(() => moveIndicator(indicatorId, 1))} />
       )}
       <Item icon={<SlidersHorizontal size={13} />} label="Manage indicators…" onClick={act(() => setIndicatorsPanelOpen(true))} />
-      <div className="my-1 h-px bg-terminal-border" />
+      <div className="menu-sep" />
       <Item icon={<Trash2 size={13} />} label="Remove" danger onClick={act(() => removeIndicator(indicatorId))} />
     </div>
   );

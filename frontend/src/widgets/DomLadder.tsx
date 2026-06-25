@@ -183,7 +183,7 @@ export default function DomLadder() {
               min={1}
               value={qty}
               onChange={(e) => setQty(Math.max(1, Number(e.target.value) || 1))}
-              className="w-11 rounded border border-terminal-border/80 bg-terminal-bg px-1 py-0.5 text-center font-mono font-bold text-white focus:outline-none focus:border-flow-delta text-xs shadow-inner"
+              className="tinput w-11 px-1 !text-center font-bold"
             />
             {/* Quick buttons */}
             <div className="flex gap-0.5">
@@ -191,14 +191,14 @@ export default function DomLadder() {
                 <button
                   key={q}
                   onClick={() => setQty((prev) => prev + q)}
-                  className="rounded border border-terminal-border/60 hover:border-terminal-muted bg-terminal-panel hover:bg-terminal-border text-[9px] font-semibold text-terminal-text px-1 py-0.5 transition-all active:scale-95"
+                  className="rounded-md border border-terminal-border/60 bg-terminal-panel px-1 py-0.5 text-[9px] font-semibold text-terminal-text transition-colors hover:border-terminal-border-strong hover:bg-terminal-border/40"
                 >
                   +{q}
                 </button>
               ))}
               <button
                 onClick={() => setQty(1)}
-                className="rounded border border-terminal-border/60 hover:border-flow-sell bg-terminal-panel hover:bg-flow-sell/20 text-[9px] font-bold text-flow-sellHi px-1.5 py-0.5 transition-all active:scale-95"
+                className="rounded-md border border-terminal-border/60 bg-terminal-panel px-1.5 py-0.5 text-[9px] font-bold text-flow-sellHi transition-colors hover:border-flow-sell/50 hover:bg-flow-sell/20"
                 title="Reset Qty to 1"
               >
                 C
@@ -286,8 +286,8 @@ export default function DomLadder() {
                     {/* Price Column */}
                     <td 
                       className={`px-1.5 py-1 text-center relative font-bold text-[11px] ${
-                        atMid 
-                          ? "text-white bg-flow-delta/20 border-y border-flow-delta/40" 
+                        atMid
+                          ? "text-terminal-text bg-flow-delta/20 border-y border-flow-delta/40"
                           : isEntryPrice 
                             ? (pos.qty > 0 ? "text-flow-buyHi font-black" : "text-flow-sellHi font-black") 
                             : "text-terminal-text"
@@ -297,7 +297,7 @@ export default function DomLadder() {
                       
                       {/* Midprice indicator dot */}
                       {atMid && (
-                        <span className="absolute right-1 top-[7px] w-1.5 h-1.5 rounded-full bg-flow-buyHi shadow shadow-flow-buyHi animate-ping" />
+                        <span className="absolute right-1 top-[7px] h-1.5 w-1.5 rounded-full bg-flow-delta" />
                       )}
 
                       {/* Position average entry badge */}
@@ -352,7 +352,7 @@ export default function DomLadder() {
                               e.stopPropagation();
                               cancel(o.id);
                             }} 
-                            className="hover:text-white text-terminal-muted hover:bg-white/10 rounded transition-colors font-bold px-0.5 text-[9px] leading-none" 
+                            className="rounded px-0.5 text-[9px] font-bold leading-none text-terminal-muted transition-colors hover:bg-terminal-border/60 hover:text-terminal-text"
                             title="Cancel Order"
                           >
                             ×

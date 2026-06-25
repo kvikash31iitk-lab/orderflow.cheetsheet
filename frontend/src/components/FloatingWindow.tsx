@@ -8,6 +8,7 @@
 // Mount these high in the tree (App/Header/Dashboard top level) — NOT inside a
 // `.panel` (its backdrop-blur creates a containing block that would trap position:fixed).
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { X } from "lucide-react";
 import { useStore, type WindowRect } from "../store/useStore";
 
 export interface DefaultRect {
@@ -226,7 +227,7 @@ export default function FloatingWindow({
   return (
     <div
       ref={winRef}
-      className="fixed flex flex-col overflow-hidden rounded-lg border border-terminal-border bg-terminal-panel shadow-2xl shadow-black/50"
+      className="fixed flex flex-col overflow-hidden rounded-md border border-terminal-border bg-terminal-panel shadow-xl shadow-black/30"
       style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h, zIndex: z }}
       onPointerDown={focus}
       role="dialog"
@@ -234,23 +235,17 @@ export default function FloatingWindow({
     >
       {/* title bar (drag handle) */}
       <div
-        className="flex shrink-0 cursor-move items-center justify-between gap-2 border-b border-terminal-border bg-terminal-bg/40 px-3 py-1.5"
+        className="flex shrink-0 cursor-move items-center justify-between gap-2 border-b border-terminal-border bg-terminal-bg/30 px-3 py-1.5"
         onPointerDown={onHeaderPointerDown}
         onPointerMove={onHeaderPointerMove}
         onPointerUp={endHeaderDrag}
         onPointerCancel={endHeaderDrag}
       >
-        <span className="truncate text-[11px] font-semibold uppercase tracking-wider text-terminal-muted">
-          {title}
-        </span>
-        <div className="flex items-center gap-2" data-no-drag>
+        <span className="section-label truncate">{title}</span>
+        <div className="flex items-center gap-1.5" data-no-drag>
           {headerExtra}
-          <button
-            onClick={onClose}
-            title="Close"
-            className="text-lg leading-none text-terminal-muted hover:text-terminal-text"
-          >
-            ×
+          <button onClick={onClose} title="Close" className="row-icon-btn">
+            <X size={14} />
           </button>
         </div>
       </div>
@@ -274,7 +269,8 @@ export default function FloatingWindow({
         onPointerCancel={endResize}
         title="Resize"
       >
-        <span className="pointer-events-none absolute bottom-0.5 right-0.5 text-terminal-muted">⋰</span>
+        {/* subtle corner grip: two stacked hairlines, no decorative glyph */}
+        <span className="pointer-events-none absolute bottom-[3px] right-[3px] h-[6px] w-[6px] border-b border-r border-terminal-muted/60" />
       </div>
     </div>
   );

@@ -53,10 +53,10 @@ function Field({ k, v, onChange }: { k: string; v: Val; onChange: (nv: Val) => v
   const label = <span className="min-w-0 flex-1 truncate text-[11px] text-terminal-muted" title={k}>{humanize(k)}</span>;
   if (typeof v === "boolean") {
     return (
-      <label className="flex cursor-pointer items-center justify-between gap-3 py-1">
+      <div className="flex items-center justify-between gap-3 py-1">
         {label}
-        <input type="checkbox" checked={v} onChange={(e) => onChange(e.target.checked)} className="h-4 w-4 accent-flow-delta" />
-      </label>
+        <button type="button" role="switch" aria-checked={v} data-on={v} onClick={() => onChange(!v)} className="switch" title={v ? "On" : "Off"} />
+      </div>
     );
   }
   if (typeof v === "number") {
@@ -69,7 +69,7 @@ function Field({ k, v, onChange }: { k: string; v: Val; onChange: (nv: Val) => v
           value={v}
           step={isInt ? 1 : "any"}
           onChange={(e) => onChange(e.target.value === "" ? v : Number(e.target.value))}
-          className="w-28 rounded border border-terminal-border bg-terminal-bg px-2 py-1 text-right font-mono text-xs text-terminal-text"
+          className="tinput w-28"
         />
       </label>
     );
@@ -80,7 +80,7 @@ function Field({ k, v, onChange }: { k: string; v: Val; onChange: (nv: Val) => v
     return (
       <label className="flex items-center justify-between gap-3 py-1">
         {label}
-        <select value={v} onChange={(e) => onChange(e.target.value)} className="w-40 rounded border border-terminal-border bg-terminal-bg px-1.5 py-1 text-xs text-terminal-text">
+        <select value={v} onChange={(e) => onChange(e.target.value)} className="tsel w-40">
           {options.map((o) => (
             <option key={o} value={o}>{o}</option>
           ))}
@@ -91,7 +91,7 @@ function Field({ k, v, onChange }: { k: string; v: Val; onChange: (nv: Val) => v
   return (
     <label className="flex items-center justify-between gap-3 py-1">
       {label}
-      <input type="text" value={v} onChange={(e) => onChange(e.target.value)} className="w-40 rounded border border-terminal-border bg-terminal-bg px-2 py-1 text-xs text-terminal-text" />
+      <input type="text" value={v} onChange={(e) => onChange(e.target.value)} className="tinput w-40 !text-left" />
     </label>
   );
 }
@@ -126,7 +126,7 @@ function Body({ ind, onClose }: { ind: IndicatorInstance; onClose: () => void })
   const TabBtn = ({ id, label }: { id: Tab; label: string }) => (
     <button
       onClick={() => setTab(id)}
-      className={`px-3 py-1.5 text-xs font-medium ${tab === id ? "border-b-2 border-flow-delta text-terminal-text" : "text-terminal-muted hover:text-terminal-text"}`}
+      className={`px-3 py-1.5 text-xs font-medium transition-colors ${tab === id ? "border-b-2 border-accent text-terminal-text" : "text-terminal-muted hover:text-terminal-text"}`}
     >
       {label}
     </button>
@@ -140,13 +140,9 @@ function Body({ ind, onClose }: { ind: IndicatorInstance; onClose: () => void })
       widthClass="w-[560px]"
       footer={
         <>
-          <button onClick={resetDefaults} className="mr-auto rounded border border-terminal-border px-3 py-1 text-xs text-terminal-muted hover:bg-terminal-border hover:text-terminal-text">
-            Defaults
-          </button>
-          <button onClick={onClose} className="rounded border border-terminal-border px-3 py-1 text-xs text-terminal-text hover:bg-terminal-border">
-            Cancel
-          </button>
-          <button onClick={apply} className="rounded bg-flow-delta px-4 py-1 text-xs font-semibold text-white">
+          <button onClick={resetDefaults} className="tbtn mr-auto">Defaults</button>
+          <button onClick={onClose} className="tbtn">Cancel</button>
+          <button onClick={apply} className="inline-flex h-7 items-center rounded-md bg-accent px-4 text-[12px] font-semibold text-white transition-colors hover:bg-accent/90">
             OK
           </button>
         </>
@@ -166,7 +162,7 @@ function Body({ ind, onClose }: { ind: IndicatorInstance; onClose: () => void })
         {tab === "inputs" &&
           grouped.map((grp) => (
             <div key={grp.name} className="mb-2">
-              <div className="mb-0.5 mt-2 text-[10px] font-semibold uppercase tracking-wider text-terminal-muted">{grp.name}</div>
+              <div className="section-label mb-1 mt-2">{grp.name}</div>
               <div className="divide-y divide-terminal-border/40">
                 {grp.keys.map((k) => (
                   <Field key={k} k={k} v={draft[k]} onChange={(nv) => set(k, nv)} />
@@ -184,10 +180,10 @@ function Body({ ind, onClose }: { ind: IndicatorInstance; onClose: () => void })
             ) : (
               styleKeys.map((k) => <Field key={k} k={k} v={draft[k]} onChange={(nv) => set(k, nv)} />)
             )}
-            <label className="flex items-center justify-between gap-3 py-1 opacity-70">
+            <div className="flex items-center justify-between gap-3 py-1 opacity-70">
               <span className="text-[11px] text-terminal-muted">Overlay (price pane)</span>
-              <input type="checkbox" checked={ind.overlay} disabled className="h-4 w-4 accent-flow-delta" />
-            </label>
+              <span className="switch cursor-default" data-on={ind.overlay} title="Defined by the script" />
+            </div>
           </div>
         )}
 
@@ -199,14 +195,14 @@ function Body({ ind, onClose }: { ind: IndicatorInstance; onClose: () => void })
               const upd = (patch: Partial<typeof c>) => setVis((p) => ({ ...p, [cat.key]: { ...p[cat.key], ...patch } }));
               return (
                 <div key={cat.key} className="flex items-center gap-2 py-1">
-                  <label className="flex w-28 cursor-pointer items-center gap-2">
-                    <input type="checkbox" checked={c.enabled} onChange={(e) => upd({ enabled: e.target.checked })} className="h-4 w-4 accent-flow-delta" />
+                  <div className="flex w-28 items-center gap-2">
+                    <button type="button" role="switch" aria-checked={c.enabled} data-on={c.enabled} onClick={() => upd({ enabled: !c.enabled })} className="switch" title={c.enabled ? "Shown" : "Hidden"} />
                     <span className="text-[11px] text-terminal-text">{cat.label}</span>
-                  </label>
+                  </div>
                   <span className="text-[10px] text-terminal-muted">from</span>
-                  <input type="number" min={1} max={cat.max} value={c.from} disabled={!c.enabled || cat.max === 1} onChange={(e) => upd({ from: Math.max(1, Number(e.target.value) || 1) })} className="w-16 rounded border border-terminal-border bg-terminal-bg px-1.5 py-1 text-right text-xs text-terminal-text disabled:opacity-40" />
+                  <input type="number" min={1} max={cat.max} value={c.from} disabled={!c.enabled || cat.max === 1} onChange={(e) => upd({ from: Math.max(1, Number(e.target.value) || 1) })} className="tinput w-16 disabled:opacity-40" />
                   <span className="text-[10px] text-terminal-muted">to</span>
-                  <input type="number" min={1} max={cat.max} value={c.to} disabled={!c.enabled || cat.max === 1} onChange={(e) => upd({ to: Math.max(1, Number(e.target.value) || 1) })} className="w-16 rounded border border-terminal-border bg-terminal-bg px-1.5 py-1 text-right text-xs text-terminal-text disabled:opacity-40" />
+                  <input type="number" min={1} max={cat.max} value={c.to} disabled={!c.enabled || cat.max === 1} onChange={(e) => upd({ to: Math.max(1, Number(e.target.value) || 1) })} className="tinput w-16 disabled:opacity-40" />
                 </div>
               );
             })}

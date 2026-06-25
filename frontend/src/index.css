@@ -108,7 +108,36 @@ body {
   .switch[data-on="true"]::after {
     @apply translate-x-[12px] bg-white;
   }
-  
+
+  /* ---- elevated popover / menu surface (context menus, dropdowns, floating chrome) ---- */
+  .popover {
+    @apply rounded-md border border-terminal-border-strong bg-terminal-elevated shadow-xl shadow-black/40;
+  }
+  .menu-item {
+    @apply flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-terminal-text transition-colors hover:bg-terminal-border/60;
+  }
+  .menu-item-danger {
+    @apply text-flow-sellHi hover:bg-flow-sellHi/10;
+  }
+  .menu-sep {
+    @apply my-1 h-px bg-terminal-border;
+  }
+  /* padding-free core of .panel-title, for inline section labels inside dialogs/panels */
+  .section-label {
+    @apply text-[10.5px] font-semibold uppercase tracking-[0.08em] text-terminal-muted;
+  }
+  /* compact 24px borderless icon button for in-row / chart-overlay actions (lighter than .tbtn-icon) */
+  .row-icon-btn {
+    @apply flex h-6 w-6 shrink-0 items-center justify-center rounded leading-none text-terminal-muted transition-colors hover:bg-terminal-border/40 hover:text-terminal-text;
+  }
+  .row-icon-btn-danger {
+    @apply text-flow-sellHi hover:bg-flow-sellHi/10 hover:text-flow-sellHi;
+  }
+  /* ghost text button (low-emphasis inline actions: reset / clear all) */
+  .tbtn-link {
+    @apply rounded text-[11px] text-terminal-muted transition-colors hover:text-terminal-text;
+  }
+
   /* Premium Trading Control buttons */
   .btn-buy-mkt {
     @apply bg-gradient-to-r from-flow-buy to-flow-buy/80 hover:from-flow-buyHi hover:to-flow-buy text-white font-semibold shadow-lg shadow-flow-buy/20 hover:shadow-flow-buyHi/30 active:scale-95 transition-all duration-150 rounded px-3 py-1.5 text-xs;

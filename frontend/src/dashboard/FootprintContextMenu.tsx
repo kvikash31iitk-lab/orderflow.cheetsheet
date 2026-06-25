@@ -7,9 +7,8 @@ import { useStore } from "../store/useStore";
 import type { FootprintColorMatrix, FootprintColumns, FootprintSettings } from "../types/orderflow";
 import { FOOTPRINT_PRESETS } from "./footprintPresets";
 
-const menuCls =
-  "min-w-[190px] overflow-auto rounded-md border border-terminal-border-strong bg-terminal-elevated py-1 shadow-xl shadow-black/40";
-const rowCls = "flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs";
+const menuCls = "popover min-w-[190px] overflow-auto py-1";
+const rowCls = "menu-item";
 
 function Item({
   icon,
@@ -27,10 +26,10 @@ function Item({
   return (
     <button
       onClick={onClick}
-      className={`${rowCls} ${danger ? "text-flow-sellHi hover:bg-flow-sellHi/10" : "text-terminal-text hover:bg-terminal-border/60"}`}
+      className={`${rowCls} ${danger ? "menu-item-danger" : ""}`}
     >
       <span className="flex w-4 shrink-0 justify-center text-terminal-muted">
-        {active ? <Check size={13} className="text-flow-delta" /> : icon}
+        {active ? <Check size={13} className="text-accent" /> : icon}
       </span>
       <span className="flex-1 truncate">{label}</span>
     </button>
@@ -41,7 +40,7 @@ function Submenu({ icon, label, openLeft, children }: { icon: ReactNode; label: 
   const [open, setOpen] = useState(false);
   return (
     <div className="relative" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
-      <button className={`${rowCls} text-terminal-text hover:bg-terminal-border/60`}>
+      <button className={rowCls}>
         <span className="flex w-4 shrink-0 justify-center text-terminal-muted">{icon}</span>
         <span className="flex-1 truncate">{label}</span>
         <ChevronRight size={12} className="shrink-0 text-terminal-muted" />
@@ -55,7 +54,7 @@ function Submenu({ icon, label, openLeft, children }: { icon: ReactNode; label: 
   );
 }
 
-const Divider = () => <div className="my-1 h-px bg-terminal-border" />;
+const Divider = () => <div className="menu-sep" />;
 
 const TOGGLES: { key: keyof FootprintSettings; label: string }[] = [
   { key: "showCluster", label: "Show Cluster" },
