@@ -14,7 +14,9 @@ export function lwcTheme(theme: "dark" | "light") {
     grid: { vertLines: { color: grid }, horzLines: { color: grid } },
     // IST axis ticks + IST crosshair label (display only; data stays epoch-UTC)
     timeScale: { timeVisible: true, secondsVisible: false, borderColor: grid, tickMarkFormatter: istTickFormatter },
-    rightPriceScale: { borderColor: grid },
+    // fixed-floor gutter so every synced pane (main / CVD / histogram / bar-stats) shares one
+    // right-axis width -> their bars line up column-for-column.
+    rightPriceScale: { borderColor: grid, minimumWidth: 64 },
     localization: { timeFormatter: istCrosshairFormatter },
   };
 }

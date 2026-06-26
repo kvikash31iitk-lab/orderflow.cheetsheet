@@ -15,6 +15,7 @@ import type {
   ServerMessage,
   SymbolConfig,
 } from "../types/orderflow";
+import { DEFAULT_BAR_STAT_SETTINGS, type BarStatSettings } from "../barStats/types";
 import type {
   IndicatorExecutionMode,
   IndicatorInstance,
@@ -43,18 +44,21 @@ export interface DashboardLayout {
   domColumnWidth: number; // DOM ladder column
   cumDeltaHeight: number; // Cumulative Delta panel
   histHeight: number; // Delta Histogram panel
+  barStatsHeight: number; // Bar Statistics panel
 }
 export const DEFAULT_LAYOUT: DashboardLayout = {
   rightColumnWidth: 320,
   domColumnWidth: 280,
   cumDeltaHeight: 200,
   histHeight: 180,
+  barStatsHeight: 150,
 };
 export const LAYOUT_BOUNDS: Record<keyof DashboardLayout, [number, number]> = {
   rightColumnWidth: [280, 640],
   domColumnWidth: [240, 500],
   cumDeltaHeight: [120, 420],
   histHeight: [120, 380],
+  barStatsHeight: [90, 360],
 };
 function clampLayoutValue(key: keyof DashboardLayout, v: number): number {
   const [min, max] = LAYOUT_BOUNDS[key];
@@ -403,6 +407,30 @@ function persistSettings(settings: FootprintSettings): void {
   }
 }
 
+// ---- Bar Statistics persistence (separate key; visibility + settings) ----
+const BARSTATS_LS_KEY = "vikings.barstats.v1";
+function loadPersistedBarStats(): { show: boolean; settings: BarStatSettings } {
+  const fallback = { show: false, settings: { ...DEFAULT_BAR_STAT_SETTINGS } };
+  try {
+    const raw = localStorage.getItem(BARSTATS_LS_KEY);
+    if (!raw) return fallback;
+    const p = JSON.parse(raw) as Partial<{ show: boolean; settings: Partial<BarStatSettings> }>;
+    const merged = { ...DEFAULT_BAR_STAT_SETTINGS, ...(p.settings ?? {}) };
+    // the pane filters enabled ids to AVAILABLE metrics at render time, so a stale id is harmless
+    if (!Array.isArray(merged.enabled)) merged.enabled = [...DEFAULT_BAR_STAT_SETTINGS.enabled];
+    return { show: typeof p.show === "boolean" ? p.show : false, settings: merged };
+  } catch {
+    return fallback;
+  }
+}
+function persistBarStats(show: boolean, settings: BarStatSettings): void {
+  try {
+    localStorage.setItem(BARSTATS_LS_KEY, JSON.stringify({ show, settings }));
+  } catch {
+    /* ignore quota / unavailable storage */
+  }
+}
+
 // debounced + race-guarded recompute (declared before the store; called at runtime
 // after `useStore` exists, so the forward reference is safe)
 let recomputeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -438,6 +466,10 @@ interface State {
   chartDisplayMode: "footprint" | "candle";
   theme: "dark" | "light";
   settings: FootprintSettings;
+  // Bar Statistics pane (candle-aligned per-bar metric grid)
+  showBarStats: boolean;
+  barStatsSettings: BarStatSettings;
+  barStatsSettingsOpen: boolean;
   blockSizeModalOpen: boolean;
   positions: Position[];
   orders: Order[];
@@ -489,6 +521,10 @@ interface State {
   toggleTheme: () => void;
   setSettings: (patch: Partial<FootprintSettings>) => void;
   resetSettings: () => void;
+  setShowBarStats: (v: boolean) => void;
+  setBarStatsSettings: (patch: Partial<BarStatSettings>) => void;
+  resetBarStatsSettings: () => void;
+  setBarStatsSettingsOpen: (open: boolean) => void;
   setBlockSizeModalOpen: (open: boolean) => void;
   ingest: (msg: ServerMessage) => void;
   loadSnapshot: (symbol: string, timeframe: string, candles: FootprintCandle[]) => void;
@@ -553,6 +589,7 @@ function upsert(candles: FootprintCandle[], c: FootprintCandle): FootprintCandle
 
 const persistedIndicators = loadPersistedIndicators();
 const persistedDrawings = loadPersistedDrawings();
+const persistedBarStats = loadPersistedBarStats();
 const persistedWindows = loadPersistedWindows();
 const persistedLayout = loadPersistedLayout();
 const persistedSettings = loadPersistedSettings();
@@ -589,6 +626,9 @@ export const useStore = create<State>((set, get) => ({
   pendingAnchorTool: null,
   indicatorsPanelOpen: false,
   footprintSettingsOpen: false,
+  showBarStats: persistedBarStats.show,
+  barStatsSettings: persistedBarStats.settings,
+  barStatsSettingsOpen: false,
   settingsIndicatorId: null,
   sourceIndicatorId: null,
 
@@ -647,6 +687,21 @@ export const useStore = create<State>((set, get) => ({
     set({ settings });
     persistSettings(settings);
   },
+  setShowBarStats: (v) => {
+    set({ showBarStats: v });
+    persistBarStats(v, get().barStatsSettings);
+  },
+  setBarStatsSettings: (patch) => {
+    const next = { ...get().barStatsSettings, ...patch };
+    set({ barStatsSettings: next });
+    persistBarStats(get().showBarStats, next);
+  },
+  resetBarStatsSettings: () => {
+    const next = { ...DEFAULT_BAR_STAT_SETTINGS };
+    set({ barStatsSettings: next });
+    persistBarStats(get().showBarStats, next);
+  },
+  setBarStatsSettingsOpen: (open) => set({ barStatsSettingsOpen: open }),
   setBlockSizeModalOpen: (open) => set({ blockSizeModalOpen: open }),
 
   // resizable dashboard layout: clamp each provided dimension + persist

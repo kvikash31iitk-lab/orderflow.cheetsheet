@@ -10,7 +10,7 @@ import type {
   Time,
 } from "lightweight-charts";
 
-export type ChartId = "main" | "histogram" | "cumdelta";
+export type ChartId = "main" | "histogram" | "cumdelta" | "barstats";
 
 export interface ChartEntry {
   chart: IChartApi;

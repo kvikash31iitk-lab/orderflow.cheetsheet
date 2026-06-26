@@ -1,7 +1,9 @@
 import { useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
-import { RotateCcw } from "lucide-react";
+import { RotateCcw, Settings, X } from "lucide-react";
 import { useStore, LAYOUT_BOUNDS } from "../store/useStore";
 import FootprintChart from "../charts/FootprintChart";
+import BarStatisticsPane from "../widgets/BarStatisticsPane";
+import BarStatsSettingsModal from "./BarStatsSettingsModal";
 import BlockSizeModal from "./BlockSizeModal";
 import Header from "./Header";
 import AlertsPanel from "../widgets/AlertsPanel";
@@ -79,6 +81,9 @@ export default function Dashboard() {
   const [showScanner, setShowScanner] = useState(true);
   const [objectsOpen, setObjectsOpen] = useState(false);
   const setBlockSizeModalOpen = useStore((s) => s.setBlockSizeModalOpen);
+  const showBarStats = useStore((s) => s.showBarStats);
+  const setShowBarStats = useStore((s) => s.setShowBarStats);
+  const setBarStatsSettingsOpen = useStore((s) => s.setBarStatsSettingsOpen);
   const layout = useStore((s) => s.layout);
   const setLayout = useStore((s) => s.setLayout);
   const resetLayout = useStore((s) => s.resetLayout);
@@ -103,6 +108,7 @@ export default function Dashboard() {
   // left column rows: chart always 1fr, then a splitter + the resizable panel for each
   // visible delta pane (sizes come from the persisted layout).
   const leftRows = ["1fr"];
+  if (showBarStats) leftRows.push("8px", `${layout.barStatsHeight}px`);
   if (showHist) leftRows.push("8px", `${layout.histHeight}px`);
   if (showCum) leftRows.push("8px", `${layout.cumDeltaHeight}px`);
 
@@ -115,6 +121,7 @@ export default function Dashboard() {
   return (
     <div className="flex h-full flex-col bg-terminal-bg">
       <BlockSizeModal />
+      <BarStatsSettingsModal />
       <ObjectTreePanel open={objectsOpen} onClose={() => setObjectsOpen(false)} />
       <IndicatorSettingsDialog />
       <IndicatorSourceDialog />
@@ -145,6 +152,15 @@ export default function Dashboard() {
                     <PanelToggle label="Cum" on={showCum} set={setShowCum} />
                     <PanelToggle label="Scan" on={showScanner} set={setShowScanner} />
                     <button
+                      onClick={() => setShowBarStats(!showBarStats)}
+                      title={`${showBarStats ? "Hide" : "Show"} Bar Statistics`}
+                      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors ${
+                        showBarStats ? "bg-accent text-white" : "bg-terminal-border/60 text-terminal-muted hover:text-terminal-text"
+                      }`}
+                    >
+                      Stats
+                    </button>
+                    <button
                       onClick={resetAllLayout}
                       title="Reset panel layout to defaults"
                       className="rounded p-1 text-terminal-muted transition-colors hover:bg-terminal-border/60 hover:text-terminal-text"
@@ -158,6 +174,42 @@ export default function Dashboard() {
             >
               <FootprintChart />
             </Panel>
+            {showBarStats && (
+              <Splitter
+                axis="y"
+                invert
+                value={layout.barStatsHeight}
+                min={LAYOUT_BOUNDS.barStatsHeight[0]}
+                max={LAYOUT_BOUNDS.barStatsHeight[1]}
+                onChange={(v) => setLayout({ barStatsHeight: v })}
+                onReset={() => resetLayout("barStatsHeight")}
+              />
+            )}
+            {showBarStats && (
+              <Panel
+                title="Bar Statistics"
+                extra={
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setBarStatsSettingsOpen(true)}
+                      title="Bar statistics settings"
+                      className="rounded p-1 text-terminal-muted transition-colors hover:bg-terminal-border/60 hover:text-terminal-text"
+                    >
+                      <Settings size={12} />
+                    </button>
+                    <button
+                      onClick={() => setShowBarStats(false)}
+                      title="Hide bar statistics"
+                      className="rounded p-1 text-terminal-muted transition-colors hover:bg-terminal-border/60 hover:text-terminal-text"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                }
+              >
+                <BarStatisticsPane />
+              </Panel>
+            )}
             {showHist && (
               <Splitter
                 axis="y"

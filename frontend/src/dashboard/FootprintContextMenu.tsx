@@ -2,7 +2,7 @@
 // the cursor, clamped into the viewport, closes on outside pointer-down / Escape / action.
 // Reuses the IndicatorContextMenu idiom (compact rows, theme tokens, lucide icons).
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { CandlestickChart, Check, ChevronRight, Clock, Columns3, Copy, Grid3x3, Layers, LayoutGrid, Maximize2, RotateCcw, Ruler, Settings } from "lucide-react";
+import { BarChart3, CandlestickChart, Check, ChevronRight, Clock, Columns3, Copy, Grid3x3, Layers, LayoutGrid, Maximize2, RotateCcw, Ruler, Settings } from "lucide-react";
 import { useStore } from "../store/useStore";
 import type { FootprintColorMatrix, FootprintColumns, FootprintSettings } from "../types/orderflow";
 import { FOOTPRINT_PRESETS } from "./footprintPresets";
@@ -94,6 +94,9 @@ export default function FootprintContextMenu({
   const setBlockSizeModalOpen = useStore((s) => s.setBlockSizeModalOpen);
   const chartDisplayMode = useStore((s) => s.chartDisplayMode);
   const setChartDisplayMode = useStore((s) => s.setChartDisplayMode);
+  const showBarStats = useStore((s) => s.showBarStats);
+  const setShowBarStats = useStore((s) => s.setShowBarStats);
+  const setBarStatsSettingsOpen = useStore((s) => s.setBarStatsSettingsOpen);
 
   // clamp into the viewport (flip near edges); flyouts open left when near the right edge
   useLayoutEffect(() => {
@@ -173,6 +176,19 @@ export default function FootprintContextMenu({
         icon={chartDisplayMode === "footprint" ? <CandlestickChart size={13} /> : <LayoutGrid size={13} />}
         label={chartDisplayMode === "footprint" ? "Show as candles" : "Show footprint"}
         onClick={act(() => setChartDisplayMode(chartDisplayMode === "footprint" ? "candle" : "footprint"))}
+      />
+      <Item
+        icon={<BarChart3 size={13} />}
+        label={showBarStats ? "Hide Bar Statistics" : "Show Bar Statistics"}
+        onClick={act(() => setShowBarStats(!showBarStats))}
+      />
+      <Item
+        icon={<BarChart3 size={13} />}
+        label="Bar Statistics Settings…"
+        onClick={act(() => {
+          setShowBarStats(true);
+          setBarStatsSettingsOpen(true);
+        })}
       />
       <Divider />
       <Submenu icon={<Layers size={13} />} label="Apply Preset" openLeft={openLeft}>
