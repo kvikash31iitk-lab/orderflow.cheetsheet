@@ -13,8 +13,8 @@ import {
   type BarStatsSeriesApi,
   type BarStatsSeriesOptions,
 } from "../charts/barStatsSeries";
-import { computeBarStats } from "../barStats/barStatsEngine";
-import { BAR_STAT_METRIC_MAP, type BarStatMetricDef } from "../barStats/types";
+import { computeBarStats, computeBarStatAvailability } from "../barStats/barStatsEngine";
+import { AVAILABLE_BAR_STAT_IDS, BAR_STAT_METRIC_MAP, type BarStatMetricDef } from "../barStats/types";
 
 function paneOptions(theme: "dark" | "light") {
   const base = lwcTheme(theme);
@@ -37,11 +37,21 @@ export default function BarStatisticsPane() {
   const settings = useStore((s) => s.barStatsSettings);
   const lastSymbolRef = useRef(useStore.getState().symbol);
 
-  const enabled: BarStatMetricDef[] = useMemo(
+  const points = useMemo(() => computeBarStats(candles), [candles]);
+  const availability = useMemo(() => computeBarStatAvailability(points), [points]);
+  const hasData = points.length > 0;
+  // structurally-supported enabled metrics, in row order
+  const structural: BarStatMetricDef[] = useMemo(
     () => settings.enabled.map((id) => BAR_STAT_METRIC_MAP[id]).filter((d): d is BarStatMetricDef => !!d && d.available),
     [settings.enabled],
   );
-  const points = useMemo(() => computeBarStats(candles), [candles]);
+  // rows actually drawn: drop metrics with no usable data on the current timeframe (e.g. maxDelta/
+  // minDelta/vwap/tickCount on re-aggregated payloads). Before any bar has loaded, don't filter — keep
+  // the normal rows so the pane doesn't flash the empty state while the first payload is in flight.
+  const enabled: BarStatMetricDef[] = useMemo(
+    () => (hasData ? structural.filter((d) => availability[d.id]) : structural),
+    [structural, availability, hasData],
+  );
 
   // create chart + custom series once
   useEffect(() => {
@@ -77,6 +87,19 @@ export default function BarStatisticsPane() {
   useEffect(() => {
     seriesRef.current?.applyOptions({ metrics: enabled, settings });
   }, [enabled, settings]);
+
+  // publish availability so the settings modal can flag enabled-but-unavailable metrics. Signature-
+  // guarded -> the store updates only when availability actually flips (timeframe/symbol switch), never
+  // per tick. The pane itself does NOT read barStatAvailability, so this can't cause a render loop.
+  const availSigRef = useRef("");
+  useEffect(() => {
+    if (!hasData) return;
+    let sig = "";
+    for (const id of AVAILABLE_BAR_STAT_IDS) sig += availability[id] ? "1" : "0";
+    if (sig === availSigRef.current) return;
+    availSigRef.current = sig;
+    useStore.getState().setBarStatAvailability({ ...availability });
+  }, [availability, hasData]);
 
   // candle metrics -> series data (strictly-ascending unique seconds, like the sibling panes)
   useEffect(() => {
@@ -120,8 +143,10 @@ export default function BarStatisticsPane() {
         ))}
       </div>
       {enabled.length === 0 && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-[11px] text-terminal-muted">
-          No metrics enabled — open Bar Statistics settings
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-3 text-center text-[11px] text-terminal-muted">
+          {structural.length === 0
+            ? "No metrics enabled — open Bar Statistics settings"
+            : "No enabled statistics available for this timeframe"}
         </div>
       )}
     </div>

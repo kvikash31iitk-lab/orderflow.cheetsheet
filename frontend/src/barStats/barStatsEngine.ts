@@ -2,7 +2,14 @@
 // returns one BarStatPoint per bar (memoize the call site). Every value is sourced from a
 // real FootprintCandle field; unavailable metrics simply never appear here.
 import type { FootprintCandle } from "../types/orderflow";
-import { BAR_STAT_METRIC_MAP, type BarStatMetricId, type BarStatPoint, type BarStatSettings } from "./types";
+import {
+  AVAILABLE_BAR_STAT_IDS,
+  BAR_STAT_METRICS,
+  BAR_STAT_METRIC_MAP,
+  type BarStatMetricId,
+  type BarStatPoint,
+  type BarStatSettings,
+} from "./types";
 
 function dpFromRowSize(rowSize: number): number {
   const s = String(rowSize);
@@ -46,6 +53,30 @@ export function computeBarStats(candles: readonly FootprintCandle[]): BarStatPoi
     out.push({ time: c.startTime, values, dp: dpFromRowSize(c.rowSize || 1) });
   }
   return out;
+}
+
+// Which structurally-available metrics actually carry usable data in the loaded bars. Re-aggregated
+// timeframes drop fields like maxDelta/minDelta/vwap/tickCount from the payload entirely, so those
+// metrics produce no finite value anywhere -> they come back false here and the pane can hide the row
+// instead of rendering it blank. A legitimate 0 is finite and therefore counts as AVAILABLE; only
+// null/undefined/NaN (or all-missing across every bar) counts as unavailable. Early-exits once every
+// available metric has been seen, so the native-payload case is ~O(metrics), not O(bars × metrics).
+export function computeBarStatAvailability(points: readonly BarStatPoint[]): Record<BarStatMetricId, boolean> {
+  const avail = {} as Record<BarStatMetricId, boolean>;
+  for (const m of BAR_STAT_METRICS) avail[m.id] = false;
+  let remaining = AVAILABLE_BAR_STAT_IDS.length;
+  for (let i = 0; i < points.length && remaining > 0; i++) {
+    const values = points[i].values;
+    for (const id of AVAILABLE_BAR_STAT_IDS) {
+      if (avail[id]) continue;
+      const v = values[id];
+      if (v != null && Number.isFinite(v)) {
+        avail[id] = true;
+        remaining--;
+      }
+    }
+  }
+  return avail;
 }
 
 // compact magnitude: 999 / 1.5K / 120K / 1.2M

@@ -15,7 +15,7 @@ import type {
   ServerMessage,
   SymbolConfig,
 } from "../types/orderflow";
-import { DEFAULT_BAR_STAT_SETTINGS, type BarStatSettings } from "../barStats/types";
+import { DEFAULT_BAR_STAT_SETTINGS, type BarStatMetricId, type BarStatSettings } from "../barStats/types";
 import type {
   IndicatorExecutionMode,
   IndicatorInstance,
@@ -470,6 +470,9 @@ interface State {
   showBarStats: boolean;
   barStatsSettings: BarStatSettings;
   barStatsSettingsOpen: boolean;
+  // ephemeral (NOT persisted): which metrics have usable data on the currently-loaded payload, so
+  // the settings modal can flag enabled-but-unavailable metrics. Published by the pane.
+  barStatAvailability: Partial<Record<BarStatMetricId, boolean>>;
   blockSizeModalOpen: boolean;
   positions: Position[];
   orders: Order[];
@@ -525,6 +528,7 @@ interface State {
   setBarStatsSettings: (patch: Partial<BarStatSettings>) => void;
   resetBarStatsSettings: () => void;
   setBarStatsSettingsOpen: (open: boolean) => void;
+  setBarStatAvailability: (map: Partial<Record<BarStatMetricId, boolean>>) => void;
   setBlockSizeModalOpen: (open: boolean) => void;
   ingest: (msg: ServerMessage) => void;
   loadSnapshot: (symbol: string, timeframe: string, candles: FootprintCandle[]) => void;
@@ -629,6 +633,7 @@ export const useStore = create<State>((set, get) => ({
   showBarStats: persistedBarStats.show,
   barStatsSettings: persistedBarStats.settings,
   barStatsSettingsOpen: false,
+  barStatAvailability: {},
   settingsIndicatorId: null,
   sourceIndicatorId: null,
 
@@ -702,6 +707,7 @@ export const useStore = create<State>((set, get) => ({
     persistBarStats(get().showBarStats, next);
   },
   setBarStatsSettingsOpen: (open) => set({ barStatsSettingsOpen: open }),
+  setBarStatAvailability: (map) => set({ barStatAvailability: map }),
   setBlockSizeModalOpen: (open) => set({ blockSizeModalOpen: open }),
 
   // resizable dashboard layout: clamp each provided dimension + persist

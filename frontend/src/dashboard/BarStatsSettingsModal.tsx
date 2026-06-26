@@ -78,6 +78,7 @@ export default function BarStatsSettingsModal() {
   const reset = useStore((s) => s.resetBarStatsSettings);
   const showBarStats = useStore((s) => s.showBarStats);
   const setShowBarStats = useStore((s) => s.setShowBarStats);
+  const availability = useStore((s) => s.barStatAvailability);
 
   if (!open) return null;
   const close = () => setOpen(false);
@@ -169,11 +170,24 @@ export default function BarStatsSettingsModal() {
         </Field>
 
         <GroupLabel>Metrics</GroupLabel>
-        {AVAILABLE.map((m) => (
-          <Field key={m.id} label={m.label}>
-            <Switch on={settings.enabled.includes(m.id)} onChange={(on) => toggleMetric(m.id, on)} />
-          </Field>
-        ))}
+        {AVAILABLE.map((m) => {
+          const on = settings.enabled.includes(m.id);
+          // structurally supported but no data on the active timeframe (published by the pane) ->
+          // subtle "n/a here" tag; the metric stays toggleable and reappears when data returns.
+          const unavailableNow = on && availability[m.id] === false;
+          return (
+            <Field
+              key={m.id}
+              label={m.label}
+              tip={unavailableNow ? "Unavailable on the current timeframe — requires the native footprint payload" : undefined}
+            >
+              {unavailableNow && (
+                <span className="text-[9px] font-medium uppercase tracking-wide text-amber-500/70">n/a here</span>
+              )}
+              <Switch on={on} onChange={(v) => toggleMetric(m.id, v)} />
+            </Field>
+          );
+        })}
 
         <GroupLabel>Unavailable · needs extra data</GroupLabel>
         {UNAVAILABLE.map((m) => (
