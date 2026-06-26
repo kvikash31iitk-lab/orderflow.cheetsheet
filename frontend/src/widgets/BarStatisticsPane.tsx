@@ -121,6 +121,18 @@ export default function BarStatisticsPane() {
     seriesRef.current?.applyOptions({ metrics: enabled, settings });
   }, [enabled, settings]);
 
+  // publish the row tally (enabled-&-supported vs actually-shown) so the pane HEADER can note when
+  // some enabled metrics are hidden for the current visible range. Value-guarded (the pane never
+  // reads barStatRowInfo) -> store updates only when a count changes, no render loop.
+  const rowInfoRef = useRef({ total: -1, shown: -1 });
+  useEffect(() => {
+    const total = structural.length;
+    const shown = enabled.length;
+    if (total === rowInfoRef.current.total && shown === rowInfoRef.current.shown) return;
+    rowInfoRef.current = { total, shown };
+    useStore.getState().setBarStatRowInfo({ total, shown });
+  }, [structural.length, enabled.length]);
+
   // candle metrics -> series data (strictly-ascending unique seconds, like the sibling panes)
   useEffect(() => {
     const series = seriesRef.current;

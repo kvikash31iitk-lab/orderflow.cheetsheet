@@ -473,6 +473,9 @@ interface State {
   // ephemeral (NOT persisted): which metrics have usable data on the currently-loaded payload, so
   // the settings modal can flag enabled-but-unavailable metrics. Published by the pane.
   barStatAvailability: Partial<Record<BarStatMetricId, boolean>>;
+  // ephemeral (NOT persisted): row tally the pane publishes so the pane HEADER can note when some
+  // enabled metrics are hidden for the current visible range. total = enabled & supported; shown = rendered.
+  barStatRowInfo: { total: number; shown: number };
   blockSizeModalOpen: boolean;
   positions: Position[];
   orders: Order[];
@@ -529,6 +532,7 @@ interface State {
   resetBarStatsSettings: () => void;
   setBarStatsSettingsOpen: (open: boolean) => void;
   setBarStatAvailability: (map: Partial<Record<BarStatMetricId, boolean>>) => void;
+  setBarStatRowInfo: (info: { total: number; shown: number }) => void;
   setBlockSizeModalOpen: (open: boolean) => void;
   ingest: (msg: ServerMessage) => void;
   loadSnapshot: (symbol: string, timeframe: string, candles: FootprintCandle[]) => void;
@@ -634,6 +638,7 @@ export const useStore = create<State>((set, get) => ({
   barStatsSettings: persistedBarStats.settings,
   barStatsSettingsOpen: false,
   barStatAvailability: {},
+  barStatRowInfo: { total: 0, shown: 0 },
   settingsIndicatorId: null,
   sourceIndicatorId: null,
 
@@ -708,6 +713,7 @@ export const useStore = create<State>((set, get) => ({
   },
   setBarStatsSettingsOpen: (open) => set({ barStatsSettingsOpen: open }),
   setBarStatAvailability: (map) => set({ barStatAvailability: map }),
+  setBarStatRowInfo: (info) => set({ barStatRowInfo: info }),
   setBlockSizeModalOpen: (open) => set({ blockSizeModalOpen: open }),
 
   // resizable dashboard layout: clamp each provided dimension + persist

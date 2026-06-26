@@ -84,6 +84,7 @@ export default function Dashboard() {
   const showBarStats = useStore((s) => s.showBarStats);
   const setShowBarStats = useStore((s) => s.setShowBarStats);
   const setBarStatsSettingsOpen = useStore((s) => s.setBarStatsSettingsOpen);
+  const barStatRowInfo = useStore((s) => s.barStatRowInfo);
   const layout = useStore((s) => s.layout);
   const setLayout = useStore((s) => s.setLayout);
   const resetLayout = useStore((s) => s.resetLayout);
@@ -189,7 +190,18 @@ export default function Dashboard() {
               <Panel
                 title="Bar Statistics"
                 extra={
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-2">
+                    {barStatRowInfo.total - barStatRowInfo.shown > 0 && (
+                      <span
+                        title="Some enabled metrics are unavailable for the current visible bars/timeframe"
+                        className={`text-[10px] font-medium tabular-nums ${
+                          barStatRowInfo.shown === 0 ? "text-amber-500/80" : "text-terminal-muted"
+                        }`}
+                      >
+                        {barStatRowInfo.shown}/{barStatRowInfo.total} shown
+                      </span>
+                    )}
+                    <div className="flex items-center gap-1">
                     <button
                       onClick={() => setBarStatsSettingsOpen(true)}
                       title="Bar statistics settings"
@@ -204,6 +216,7 @@ export default function Dashboard() {
                     >
                       <X size={12} />
                     </button>
+                    </div>
                   </div>
                 }
               >
