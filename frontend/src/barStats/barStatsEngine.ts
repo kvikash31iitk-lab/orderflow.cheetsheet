@@ -55,17 +55,24 @@ export function computeBarStats(candles: readonly FootprintCandle[]): BarStatPoi
   return out;
 }
 
-// Which structurally-available metrics actually carry usable data in the loaded bars. Re-aggregated
-// timeframes drop fields like maxDelta/minDelta/vwap/tickCount from the payload entirely, so those
-// metrics produce no finite value anywhere -> they come back false here and the pane can hide the row
-// instead of rendering it blank. A legitimate 0 is finite and therefore counts as AVAILABLE; only
-// null/undefined/NaN (or all-missing across every bar) counts as unavailable. Early-exits once every
-// available metric has been seen, so the native-payload case is ~O(metrics), not O(bars × metrics).
-export function computeBarStatAvailability(points: readonly BarStatPoint[]): Record<BarStatMetricId, boolean> {
+// Which structurally-available metrics carry usable data over points[from, to) — the caller passes
+// the CURRENTLY VISIBLE range. Re-aggregated timeframes drop fields like maxDelta/minDelta/vwap/
+// tickCount from the payload, and even within one timeframe only some historical bars may carry them,
+// so availability is judged by what's on screen: a metric with no finite value across the visible bars
+// is hidden rather than drawn as a blank row. A legitimate 0 is finite and therefore counts as
+// AVAILABLE; only null/undefined/NaN counts as unavailable. Early-exits once every metric is seen, so
+// the typical (small visible range) case is ~O(visibleBars), and the all-present case is ~O(metrics).
+export function computeBarStatAvailability(
+  points: readonly BarStatPoint[],
+  from = 0,
+  to: number = points.length,
+): Record<BarStatMetricId, boolean> {
   const avail = {} as Record<BarStatMetricId, boolean>;
   for (const m of BAR_STAT_METRICS) avail[m.id] = false;
+  const lo = Math.max(0, Math.floor(from));
+  const hi = Math.min(points.length, Math.ceil(to));
   let remaining = AVAILABLE_BAR_STAT_IDS.length;
-  for (let i = 0; i < points.length && remaining > 0; i++) {
+  for (let i = lo; i < hi && remaining > 0; i++) {
     const values = points[i].values;
     for (const id of AVAILABLE_BAR_STAT_IDS) {
       if (avail[id]) continue;

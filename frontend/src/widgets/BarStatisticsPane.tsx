@@ -2,7 +2,7 @@
 // time-synced to the main chart via chartSync (same one-way drive as CumDelta / DeltaHistogram).
 // The grid itself is a custom-series canvas renderer (barStatsSeries); the metric ROW LABELS
 // are a static DOM overlay on the left. Metric computation is memoised on the candle array.
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createChart, type IChartApi, type UTCTimestamp } from "lightweight-charts";
 import { useStore } from "../store/useStore";
 import { lwcTheme } from "../lib/chartTheme";
@@ -14,7 +14,7 @@ import {
   type BarStatsSeriesOptions,
 } from "../charts/barStatsSeries";
 import { computeBarStats, computeBarStatAvailability } from "../barStats/barStatsEngine";
-import { AVAILABLE_BAR_STAT_IDS, BAR_STAT_METRIC_MAP, type BarStatMetricDef } from "../barStats/types";
+import { AVAILABLE_BAR_STAT_IDS, BAR_STAT_METRIC_MAP, type BarStatMetricDef, type BarStatMetricId } from "../barStats/types";
 
 function paneOptions(theme: "dark" | "light") {
   const base = lwcTheme(theme);
@@ -38,19 +38,44 @@ export default function BarStatisticsPane() {
   const lastSymbolRef = useRef(useStore.getState().symbol);
 
   const points = useMemo(() => computeBarStats(candles), [candles]);
-  const availability = useMemo(() => computeBarStatAvailability(points), [points]);
-  const hasData = points.length > 0;
+  const pointsRef = useRef(points);
+  pointsRef.current = points;
   // structurally-supported enabled metrics, in row order
   const structural: BarStatMetricDef[] = useMemo(
     () => settings.enabled.map((id) => BAR_STAT_METRIC_MAP[id]).filter((d): d is BarStatMetricDef => !!d && d.available),
     [settings.enabled],
   );
-  // rows actually drawn: drop metrics with no usable data on the current timeframe (e.g. maxDelta/
-  // minDelta/vwap/tickCount on re-aggregated payloads). Before any bar has loaded, don't filter — keep
-  // the normal rows so the pane doesn't flash the empty state while the first payload is in flight.
+  // availability is judged over the bars CURRENTLY ON SCREEN (re-aggregated timeframes omit
+  // maxDelta/minDelta/vwap/tickCount, and even within one timeframe only some historical bars may
+  // carry them). null = not computed yet -> show the normal rows so nothing flashes empty on load.
+  const [availability, setAvailability] = useState<Record<BarStatMetricId, boolean> | null>(null);
+  const availSigRef = useRef("");
+  // recompute over the visible logical range; update React + the store ONLY when the available SET
+  // actually flips (timeframe switch / panning across a data boundary) — never per pan/zoom frame.
+  const recomputeAvailability = useCallback(() => {
+    const chart = chartRef.current;
+    const pts = pointsRef.current;
+    if (!chart || pts.length === 0) return;
+    const r = chart.timeScale().getVisibleLogicalRange();
+    let from = Math.max(0, pts.length - 120); // sensible recent window until the chart reports a range
+    let to = pts.length;
+    if (r) {
+      from = Math.floor(r.from);
+      to = Math.ceil(r.to) + 1;
+    }
+    const a = computeBarStatAvailability(pts, from, to);
+    let sig = "";
+    for (const id of AVAILABLE_BAR_STAT_IDS) sig += a[id] ? "1" : "0";
+    if (sig === availSigRef.current) return;
+    availSigRef.current = sig;
+    setAvailability(a);
+    useStore.getState().setBarStatAvailability({ ...a });
+  }, []);
+  // rows actually drawn: drop metrics with no usable data on screen. Before availability is known
+  // (initial / no data) keep the normal rows so the pane doesn't flash the empty state during load.
   const enabled: BarStatMetricDef[] = useMemo(
-    () => (hasData ? structural.filter((d) => availability[d.id]) : structural),
-    [structural, availability, hasData],
+    () => (points.length === 0 || !availability ? structural : structural.filter((d) => availability[d.id])),
+    [structural, availability, points.length],
   );
 
   // create chart + custom series once
@@ -69,13 +94,21 @@ export default function BarStatisticsPane() {
     chartRef.current = chart;
     seriesRef.current = series;
     registerChart("barstats", { chart, series });
+    // re-judge metric availability whenever the on-screen bar range changes (pan/zoom/scroll). The
+    // callback is signature-guarded so this only triggers a React update when the available SET flips.
+    chart.timeScale().subscribeVisibleLogicalRangeChange(recomputeAvailability);
     return () => {
+      try {
+        chart.timeScale().unsubscribeVisibleLogicalRangeChange(recomputeAvailability);
+      } catch {
+        /* chart already removed */
+      }
       unregisterChart("barstats");
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
     };
-  }, []);
+  }, [recomputeAvailability]);
 
   // follow the global theme
   useEffect(() => {
@@ -87,19 +120,6 @@ export default function BarStatisticsPane() {
   useEffect(() => {
     seriesRef.current?.applyOptions({ metrics: enabled, settings });
   }, [enabled, settings]);
-
-  // publish availability so the settings modal can flag enabled-but-unavailable metrics. Signature-
-  // guarded -> the store updates only when availability actually flips (timeframe/symbol switch), never
-  // per tick. The pane itself does NOT read barStatAvailability, so this can't cause a render loop.
-  const availSigRef = useRef("");
-  useEffect(() => {
-    if (!hasData) return;
-    let sig = "";
-    for (const id of AVAILABLE_BAR_STAT_IDS) sig += availability[id] ? "1" : "0";
-    if (sig === availSigRef.current) return;
-    availSigRef.current = sig;
-    useStore.getState().setBarStatAvailability({ ...availability });
-  }, [availability, hasData]);
 
   // candle metrics -> series data (strictly-ascending unique seconds, like the sibling panes)
   useEffect(() => {
@@ -123,7 +143,9 @@ export default function BarStatisticsPane() {
       lastSymbolRef.current = sym;
       chartRef.current?.priceScale("right").applyOptions({ autoScale: true });
     }
-  }, [points]);
+    // data changed (new bars / timeframe / symbol) -> re-judge availability for the visible range
+    recomputeAvailability();
+  }, [points, recomputeAvailability]);
 
   return (
     <div className="relative h-full w-full bg-terminal-bg">
