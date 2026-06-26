@@ -1,60 +1,24 @@
-// GoCharting/TradingView-style right-click menu for the footprint chart area. Anchored at
-// the cursor, clamped into the viewport, closes on outside pointer-down / Escape / action.
-// Reuses the IndicatorContextMenu idiom (compact rows, theme tokens, lucide icons).
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { BarChart3, CandlestickChart, Check, ChevronRight, Clock, Columns3, Copy, Grid3x3, Layers, LayoutGrid, Maximize2, RotateCcw, Ruler, Settings } from "lucide-react";
+// GoCharting/TradingView-style right-click menu for the footprint chart area. Built on the shared
+// TerminalContextMenu primitives — viewport clamping, outside/Escape dismissal and submenu flyouts
+// all live there now, so this file is purely the chart's action list.
+import {
+  BarChart3,
+  CandlestickChart,
+  Clock,
+  Columns3,
+  Copy,
+  Grid3x3,
+  Layers,
+  LayoutGrid,
+  Maximize2,
+  RotateCcw,
+  Ruler,
+  Settings,
+} from "lucide-react";
 import { useStore } from "../store/useStore";
 import type { FootprintColorMatrix, FootprintColumns, FootprintSettings } from "../types/orderflow";
 import { FOOTPRINT_PRESETS } from "./footprintPresets";
-
-const menuCls = "popover min-w-[190px] overflow-auto py-1";
-const rowCls = "menu-item";
-
-function Item({
-  icon,
-  label,
-  onClick,
-  active,
-  danger,
-}: {
-  icon?: ReactNode;
-  label: string;
-  onClick?: () => void;
-  active?: boolean;
-  danger?: boolean;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`${rowCls} ${danger ? "menu-item-danger" : ""}`}
-    >
-      <span className="flex w-4 shrink-0 justify-center text-terminal-muted">
-        {active ? <Check size={13} className="text-accent" /> : icon}
-      </span>
-      <span className="flex-1 truncate">{label}</span>
-    </button>
-  );
-}
-
-function Submenu({ icon, label, openLeft, children }: { icon: ReactNode; label: string; openLeft: boolean; children: ReactNode }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="relative" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
-      <button className={rowCls}>
-        <span className="flex w-4 shrink-0 justify-center text-terminal-muted">{icon}</span>
-        <span className="flex-1 truncate">{label}</span>
-        <ChevronRight size={12} className="shrink-0 text-terminal-muted" />
-      </button>
-      {open && (
-        <div className={`absolute top-0 z-[121] max-h-[70vh] ${openLeft ? "right-full mr-1" : "left-full ml-1"} ${menuCls}`}>
-          {children}
-        </div>
-      )}
-    </div>
-  );
-}
-
-const Divider = () => <div className="menu-sep" />;
+import { MenuItem, MenuSeparator, Submenu, TerminalMenu } from "../components/TerminalContextMenu";
 
 const TOGGLES: { key: keyof FootprintSettings; label: string }[] = [
   { key: "showCluster", label: "Show Cluster" },
@@ -82,10 +46,6 @@ export default function FootprintContextMenu({
   onResetView?: () => void;
   onClose: () => void;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState({ left: x, top: y });
-  const [openLeft, setOpenLeft] = useState(false);
-
   const settings = useStore((s) => s.settings);
   const setSettings = useStore((s) => s.setSettings);
   const resetSettings = useStore((s) => s.resetSettings);
@@ -97,37 +57,6 @@ export default function FootprintContextMenu({
   const showBarStats = useStore((s) => s.showBarStats);
   const setShowBarStats = useStore((s) => s.setShowBarStats);
   const setBarStatsSettingsOpen = useStore((s) => s.setBarStatsSettingsOpen);
-
-  // clamp into the viewport (flip near edges); flyouts open left when near the right edge
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    let left = x;
-    let top = y;
-    if (left + r.width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - r.width - 8);
-    if (top + r.height > window.innerHeight - 8) top = Math.max(8, window.innerHeight - r.height - 8);
-    setPos({ left, top });
-    setOpenLeft(left + r.width + 170 > window.innerWidth);
-  }, [x, y]);
-
-  // dismissal listeners attached once via a ref to the latest onClose
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-  useEffect(() => {
-    const onDown = (e: PointerEvent) => {
-      if (ref.current && e.target instanceof Node && !ref.current.contains(e.target)) onCloseRef.current();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCloseRef.current();
-    };
-    document.addEventListener("pointerdown", onDown, true);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", onDown, true);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, []);
 
   const act = (fn: () => void) => () => {
     fn();
@@ -158,31 +87,25 @@ export default function FootprintContextMenu({
   const matrix: FootprintColorMatrix = settings.colorMatrix;
 
   return (
-    <div
-      ref={ref}
-      className={`fixed z-[120] max-h-[88vh] ${menuCls}`}
-      style={{ left: pos.left, top: pos.top }}
-      onPointerDown={(e) => e.stopPropagation()}
-      onContextMenu={(e) => e.preventDefault()}
-    >
-      <Item icon={<Settings size={13} />} label="Edit Footprint Settings…" onClick={act(() => setFootprintSettingsOpen(true))} />
-      {price != null && <Item icon={<Copy size={13} />} label={`Copy price  ${price.toFixed(2)}`} onClick={copy(price.toFixed(2))} />}
-      {time != null && <Item icon={<Clock size={13} />} label={`Copy time  ${timeStr}`} onClick={copy(timeStr)} />}
+    <TerminalMenu x={x} y={y} onClose={onClose}>
+      <MenuItem icon={<Settings size={13} />} label="Edit Footprint Settings…" onClick={act(() => setFootprintSettingsOpen(true))} />
+      {price != null && <MenuItem icon={<Copy size={13} />} label={`Copy price  ${price.toFixed(2)}`} onClick={copy(price.toFixed(2))} />}
+      {time != null && <MenuItem icon={<Clock size={13} />} label={`Copy time  ${timeStr}`} onClick={copy(timeStr)} />}
       {price != null && time != null && (
-        <Item icon={<Copy size={13} />} label="Copy price + time" onClick={copy(`${price.toFixed(2)}  ${timeStr}`)} />
+        <MenuItem icon={<Copy size={13} />} label="Copy price + time" onClick={copy(`${price.toFixed(2)}  ${timeStr}`)} />
       )}
-      {onResetView && <Item icon={<Maximize2 size={13} />} label="Reset chart view" onClick={act(() => onResetView())} />}
-      <Item
+      {onResetView && <MenuItem icon={<Maximize2 size={13} />} label="Reset chart view" onClick={act(() => onResetView())} />}
+      <MenuItem
         icon={chartDisplayMode === "footprint" ? <CandlestickChart size={13} /> : <LayoutGrid size={13} />}
         label={chartDisplayMode === "footprint" ? "Show as candles" : "Show footprint"}
         onClick={act(() => setChartDisplayMode(chartDisplayMode === "footprint" ? "candle" : "footprint"))}
       />
-      <Item
+      <MenuItem
         icon={<BarChart3 size={13} />}
         label={showBarStats ? "Hide Bar Statistics" : "Show Bar Statistics"}
         onClick={act(() => setShowBarStats(!showBarStats))}
       />
-      <Item
+      <MenuItem
         icon={<BarChart3 size={13} />}
         label="Bar Statistics Settings…"
         onClick={act(() => {
@@ -190,10 +113,10 @@ export default function FootprintContextMenu({
           setBarStatsSettingsOpen(true);
         })}
       />
-      <Divider />
-      <Submenu icon={<Layers size={13} />} label="Apply Preset" openLeft={openLeft}>
+      <MenuSeparator />
+      <Submenu icon={<Layers size={13} />} label="Apply Preset">
         {FOOTPRINT_PRESETS.map((p) => (
-          <Item
+          <MenuItem
             key={p.name}
             label={p.name}
             onClick={act(() => {
@@ -203,27 +126,27 @@ export default function FootprintContextMenu({
           />
         ))}
       </Submenu>
-      <Submenu icon={<Columns3 size={13} />} label="Columns" openLeft={openLeft}>
-        <Item label="Single" active={columns === "single"} onClick={act(() => setSettings({ clusterColumns: "single" }))} />
-        <Item label="Double" active={columns === "double"} onClick={act(() => setSettings({ clusterColumns: "double" }))} />
+      <Submenu icon={<Columns3 size={13} />} label="Columns">
+        <MenuItem label="Single" active={columns === "single"} onClick={act(() => setSettings({ clusterColumns: "single" }))} />
+        <MenuItem label="Double" active={columns === "double"} onClick={act(() => setSettings({ clusterColumns: "double" }))} />
       </Submenu>
-      <Submenu icon={<Grid3x3 size={13} />} label="Color Matrix" openLeft={openLeft}>
-        <Item label="Default" active={matrix === "default"} onClick={act(() => setSettings({ colorMatrix: "default" }))} />
-        <Item label="Volume" active={matrix === "volume"} onClick={act(() => setSettings({ colorMatrix: "volume" }))} />
-        <Item label="Delta" active={matrix === "delta"} onClick={act(() => setSettings({ colorMatrix: "delta" }))} />
+      <Submenu icon={<Grid3x3 size={13} />} label="Color Matrix">
+        <MenuItem label="Default" active={matrix === "default"} onClick={act(() => setSettings({ colorMatrix: "default" }))} />
+        <MenuItem label="Volume" active={matrix === "volume"} onClick={act(() => setSettings({ colorMatrix: "volume" }))} />
+        <MenuItem label="Delta" active={matrix === "delta"} onClick={act(() => setSettings({ colorMatrix: "delta" }))} />
       </Submenu>
-      <Divider />
+      <MenuSeparator />
       {TOGGLES.map((t) => (
-        <Item
+        <MenuItem
           key={t.key}
           label={t.label}
           active={settings[t.key] as boolean}
           onClick={() => setSettings({ [t.key]: !(settings[t.key] as boolean) } as Partial<FootprintSettings>)}
         />
       ))}
-      <Divider />
-      <Item icon={<Ruler size={13} />} label="Block Size…" onClick={act(() => setBlockSizeModalOpen(true))} />
-      <Item icon={<RotateCcw size={13} />} label="Reset Footprint Settings" danger onClick={act(() => resetSettings())} />
-    </div>
+      <MenuSeparator />
+      <MenuItem icon={<Ruler size={13} />} label="Block Size…" onClick={act(() => setBlockSizeModalOpen(true))} />
+      <MenuItem icon={<RotateCcw size={13} />} label="Reset Footprint Settings" danger onClick={act(() => resetSettings())} />
+    </TerminalMenu>
   );
 }

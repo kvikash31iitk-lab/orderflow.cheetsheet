@@ -1,4 +1,7 @@
 import { useStore } from "../store/useStore";
+import { useContextMenu } from "../components/TerminalContextMenu";
+import ScannerRowMenu from "./ScannerRowMenu";
+import type { ScannerRow } from "../types/orderflow";
 
 const SIG_COLOR: Record<string, string> = {
   ABSORPTION: "text-flow-absorption",
@@ -18,6 +21,7 @@ export default function Scanner() {
   const rows = useStore((s) => s.scanner);
   const source = useStore((s) => s.source);
   const selectChartContext = useStore((s) => s.selectChartContext);
+  const { menu, open, close } = useContextMenu<{ row: ScannerRow }>();
 
   const filteredRows = rows.filter((r) => {
     const isDb = DATABENTO_SYMBOLS.includes(r.symbol.toUpperCase());
@@ -25,7 +29,8 @@ export default function Scanner() {
   });
 
   return (
-    <div className="h-full overflow-auto">
+    <>
+      <div className="h-full overflow-auto">
       <table className="w-full text-xs">
         <thead className="sticky top-0 border-b border-terminal-border-strong bg-terminal-panel text-terminal-muted">
           <tr className="text-left">
@@ -48,6 +53,7 @@ export default function Scanner() {
             <tr
               key={`${r.symbol}_${r.timeframe}`}
               onClick={() => selectChartContext(r.symbol, r.timeframe)}
+              onContextMenu={(e) => open(e, { row: r })}
               className="cursor-pointer border-t border-terminal-border hover:bg-terminal-elevated"
             >
               <td className="px-2 py-1 font-semibold">
@@ -77,6 +83,8 @@ export default function Scanner() {
           ))}
         </tbody>
       </table>
-    </div>
+      </div>
+      {menu && <ScannerRowMenu x={menu.x} y={menu.y} row={menu.row} onClose={close} />}
+    </>
   );
 }

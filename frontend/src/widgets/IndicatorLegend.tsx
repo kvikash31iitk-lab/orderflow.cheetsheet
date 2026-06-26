@@ -62,6 +62,12 @@ export default function IndicatorLegend() {
                 dimmed ? "opacity-50" : ""
               }`}
               onClick={() => selectIndicator(ind.kind === "anchored-vwap" ? ind.id : null)}
+              onContextMenu={(e) => {
+                // right-click the legend row opens the indicator menu (instead of the chart menu / native menu)
+                e.preventDefault();
+                e.stopPropagation();
+                setMenu({ id: ind.id, x: e.clientX, y: e.clientY });
+              }}
             >
               <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotColor}`} title={statusTitle} />
               <span

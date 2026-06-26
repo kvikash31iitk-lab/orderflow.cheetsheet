@@ -19,18 +19,34 @@ import ObjectTreePanel from "../widgets/ObjectTreePanel";
 import IndicatorSettingsDialog from "../widgets/IndicatorSettingsDialog";
 import IndicatorSourceDialog from "../widgets/IndicatorSourceDialog";
 import Splitter from "../components/Splitter";
+import { MenuItem, TerminalMenu, useContextMenu } from "../components/TerminalContextMenu";
 
 type View = "terminal" | "research" | "sc1lab";
 
-// min-w-0 lets grid items shrink below their content's min-content width (Task 4)
+// min-w-0 lets grid items shrink below their content's min-content width (Task 4). Right-clicking the
+// header strip opens an app menu (rather than Chrome's native one) with a universal layout action.
 function Panel({ title, children, extra }: { title: string; children: ReactNode; extra?: ReactNode }) {
+  const resetAllLayout = useStore((s) => s.resetAllLayout);
+  const { menu, open, close } = useContextMenu();
   return (
     <div className="panel flex min-h-0 min-w-0 flex-col rounded-none shadow-none">
-      <div className="flex items-center justify-between border-b border-terminal-border">
+      <div className="flex items-center justify-between border-b border-terminal-border" onContextMenu={(e) => open(e, {})}>
         <div className="panel-title border-b-0 rounded-t-none">{title}</div>
         {extra && <div className="px-2">{extra}</div>}
       </div>
       <div className="min-h-0 flex-1">{children}</div>
+      {menu && (
+        <TerminalMenu x={menu.x} y={menu.y} onClose={close}>
+          <MenuItem
+            icon={<RotateCcw size={13} />}
+            label="Reset panel layout"
+            onClick={() => {
+              resetAllLayout();
+              close();
+            }}
+          />
+        </TerminalMenu>
+      )}
     </div>
   );
 }
@@ -236,7 +252,7 @@ export default function Dashboard() {
             )}
             {showHist && (
               <Panel title="Delta Histogram">
-                <DeltaHistogram />
+                <DeltaHistogram onHide={() => setShowHist(false)} />
               </Panel>
             )}
             {showCum && (
@@ -252,7 +268,7 @@ export default function Dashboard() {
             )}
             {showCum && (
               <Panel title="Cumulative Delta">
-                <CumDelta />
+                <CumDelta onHide={() => setShowCum(false)} />
               </Panel>
             )}
           </div>

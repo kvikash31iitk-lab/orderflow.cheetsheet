@@ -1,6 +1,9 @@
 import { useEffect, useRef } from "react";
 import { useStore } from "../store/useStore";
 import { formatIstTime } from "../lib/time";
+import { useContextMenu } from "../components/TerminalContextMenu";
+import AlertRowMenu from "./AlertRowMenu";
+import type { AlertMsg } from "../types/orderflow";
 
 const SEV: Record<string, string> = {
   high: "border-l-flow-sellHi text-flow-sellHi",
@@ -33,6 +36,7 @@ export default function AlertsPanel() {
   const source = useStore((s) => s.source);
   const lastTs = useRef(0);
   const primed = useRef(false);
+  const { menu, open, close } = useContextMenu<{ alert: AlertMsg }>();
 
   const filteredAlerts = alerts.filter((a) => {
     const isDb = DATABENTO_SYMBOLS.includes(a.symbol.toUpperCase());
@@ -56,10 +60,15 @@ export default function AlertsPanel() {
   }, [filteredAlerts]);
 
   return (
-    <div className="h-full overflow-auto">
+    <>
+      <div className="h-full overflow-auto">
       {filteredAlerts.length === 0 && <div className="px-2 py-1 text-xs text-terminal-muted">no alerts yet</div>}
       {filteredAlerts.map((a, i) => (
-        <div key={`${a.ts}-${i}`} className={`border-b border-l-2 border-b-terminal-border/50 ${SEV[a.severity] ?? SEV.info} bg-terminal-elevated px-2 py-1 transition-colors hover:bg-terminal-border/30`}>
+        <div
+          key={`${a.ts}-${i}`}
+          onContextMenu={(e) => open(e, { alert: a })}
+          className={`border-b border-l-2 border-b-terminal-border/50 ${SEV[a.severity] ?? SEV.info} bg-terminal-elevated px-2 py-1 transition-colors hover:bg-terminal-border/30`}
+        >
           <div className="flex items-center justify-between text-[11px]">
             <span className="font-semibold">{a.type}</span>
             <span className="text-terminal-muted">
@@ -70,6 +79,8 @@ export default function AlertsPanel() {
           <div className="text-[10px] tabular-nums text-terminal-muted">{formatIstTime(a.ts, true)} IST</div>
         </div>
       ))}
-    </div>
+      </div>
+      {menu && <AlertRowMenu x={menu.x} y={menu.y} alert={menu.alert} onClose={close} />}
+    </>
   );
 }

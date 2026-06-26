@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type MouseEvent } from "react";
 import {
   createChart,
   LineStyle,
@@ -10,9 +10,11 @@ import {
 import { useStore } from "../store/useStore";
 import { lwcTheme } from "../lib/chartTheme";
 import { registerChart, unregisterChart } from "../lib/chartSync";
+import { useContextMenu } from "../components/TerminalContextMenu";
+import DeltaPaneMenu from "./DeltaPaneMenu";
 import type { IndicatorOutput } from "../indicators/types";
 
-export default function CumDelta() {
+export default function CumDelta({ onHide }: { onHide?: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Line"> | null>(null);
@@ -22,6 +24,26 @@ export default function CumDelta() {
   const indicatorOutputs = useStore((s) => s.indicatorOutputs);
   const overlaysRef = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
   const lastSymbolRef = useRef(useStore.getState().symbol);
+  const { menu, open, close } = useContextMenu<{ time: number | null; value: number | null }>();
+
+  // resolve the bar under the cursor (value + time) for the right-click menu
+  const onCtx = (e: MouseEvent) => {
+    let time: number | null = null;
+    let value: number | null = null;
+    const chart = chartRef.current;
+    const host = ref.current;
+    if (chart && host) {
+      const logical = chart.timeScale().coordinateToLogical(e.clientX - host.getBoundingClientRect().left);
+      if (logical != null) {
+        const d = dataRef.current[Math.round(logical as number)];
+        if (d) {
+          time = d.time * 1000;
+          value = d.value;
+        }
+      }
+    }
+    open(e, { time, value });
+  };
 
   useEffect(() => {
     if (!ref.current) return;
@@ -116,5 +138,22 @@ export default function CumDelta() {
     }
   }, [candles]);
 
-  return <div ref={ref} className="h-full w-full" />;
+  return (
+    <div className="relative h-full w-full" onContextMenu={onCtx}>
+      <div ref={ref} className="h-full w-full" />
+      {menu && (
+        <DeltaPaneMenu
+          x={menu.x}
+          y={menu.y}
+          time={menu.time}
+          value={menu.value}
+          valueLabel="Cum Δ"
+          onResetScale={() => chartRef.current?.priceScale("right").applyOptions({ autoScale: true })}
+          onHide={onHide}
+          hideLabel="Hide Cumulative Delta"
+          onClose={close}
+        />
+      )}
+    </div>
+  );
 }

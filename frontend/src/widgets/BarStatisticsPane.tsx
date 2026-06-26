@@ -2,18 +2,20 @@
 // time-synced to the main chart via chartSync (same one-way drive as CumDelta / DeltaHistogram).
 // The grid itself is a custom-series canvas renderer (barStatsSeries); the metric ROW LABELS
 // are a static DOM overlay on the left. Metric computation is memoised on the candle array.
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { createChart, type IChartApi, type UTCTimestamp } from "lightweight-charts";
 import { useStore } from "../store/useStore";
 import { lwcTheme } from "../lib/chartTheme";
 import { registerChart, unregisterChart } from "../lib/chartSync";
+import { useContextMenu } from "../components/TerminalContextMenu";
+import BarStatsContextMenu from "./BarStatsContextMenu";
 import {
   BarStatsSeriesView,
   type BarStatsData,
   type BarStatsSeriesApi,
   type BarStatsSeriesOptions,
 } from "../charts/barStatsSeries";
-import { computeBarStats, computeBarStatAvailability } from "../barStats/barStatsEngine";
+import { computeBarStats, computeBarStatAvailability, formatBarStatValue } from "../barStats/barStatsEngine";
 import { AVAILABLE_BAR_STAT_IDS, BAR_STAT_METRIC_MAP, type BarStatMetricDef, type BarStatMetricId } from "../barStats/types";
 
 function paneOptions(theme: "dark" | "light") {
@@ -77,6 +79,34 @@ export default function BarStatisticsPane() {
     () => (points.length === 0 || !availability ? structural : structural.filter((d) => availability[d.id])),
     [structural, availability, points.length],
   );
+
+  const { menu, open, close } = useContextMenu<{ time: number | null; metricShort: string | null; valueStr: string | null }>();
+  // resolve the metric row (from y) and the bar (from x) under the cursor for the right-click menu
+  const onCtx = (e: MouseEvent) => {
+    let time: number | null = null;
+    let metricShort: string | null = null;
+    let valueStr: string | null = null;
+    const chart = chartRef.current;
+    const host = ref.current;
+    if (chart && host && enabled.length > 0) {
+      const r = host.getBoundingClientRect();
+      const t = chart.timeScale().coordinateToTime(e.clientX - r.left);
+      if (typeof t === "number") {
+        time = t * 1000;
+        const pt = points.find((p) => Math.floor(p.time / 1000) === t);
+        if (pt) {
+          const row = Math.floor(((e.clientY - r.top) / r.height) * enabled.length);
+          const m = enabled[Math.max(0, Math.min(enabled.length - 1, row))];
+          const s = formatBarStatValue(m.id, pt.values[m.id] ?? null, settings, pt.dp);
+          if (s) {
+            metricShort = m.short;
+            valueStr = s;
+          }
+        }
+      }
+    }
+    open(e, { time, metricShort, valueStr });
+  };
 
   // create chart + custom series once
   useEffect(() => {
@@ -160,8 +190,18 @@ export default function BarStatisticsPane() {
   }, [points, recomputeAvailability]);
 
   return (
-    <div className="relative h-full w-full bg-terminal-bg">
+    <div className="relative h-full w-full bg-terminal-bg" onContextMenu={onCtx}>
       <div ref={ref} className="h-full w-full" />
+      {menu && (
+        <BarStatsContextMenu
+          x={menu.x}
+          y={menu.y}
+          time={menu.time}
+          metricShort={menu.metricShort}
+          valueStr={menu.valueStr}
+          onClose={close}
+        />
+      )}
       {/* static metric-name gutter, aligned row-for-row with the canvas grid. z-10 lifts it above
           the lightweight-charts canvases (which carry z-index 1/2 and would otherwise paint over
           it); a solid bg makes it a frozen header column (and cleanly hides the LWC logo corner). */}
