@@ -105,8 +105,10 @@ export default function BarStatisticsPane() {
   return (
     <div className="relative h-full w-full bg-terminal-bg">
       <div ref={ref} className="h-full w-full" />
-      {/* static metric-name gutter, aligned row-for-row with the canvas grid */}
-      <div className="pointer-events-none absolute inset-y-0 left-0 flex w-[58px] flex-col border-r border-terminal-border bg-terminal-panel/85">
+      {/* static metric-name gutter, aligned row-for-row with the canvas grid. z-10 lifts it above
+          the lightweight-charts canvases (which carry z-index 1/2 and would otherwise paint over
+          it); a solid bg makes it a frozen header column (and cleanly hides the LWC logo corner). */}
+      <div className="pointer-events-none absolute inset-y-0 left-0 z-10 flex w-[58px] flex-col border-r border-terminal-border bg-terminal-panel">
         {enabled.map((m) => (
           <div
             key={m.id}
