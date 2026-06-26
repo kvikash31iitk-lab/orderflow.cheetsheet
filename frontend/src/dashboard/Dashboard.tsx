@@ -1,4 +1,4 @@
-import { useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { RotateCcw, Settings, X } from "lucide-react";
 import { useStore, LAYOUT_BOUNDS } from "../store/useStore";
 import FootprintChart from "../charts/FootprintChart";
@@ -75,10 +75,10 @@ function Tabs({ view, setView }: { view: View; setView: (v: View) => void }) {
   );
 }
 
-function PanelToggle({ label, on, set }: { label: string; on: boolean; set: Dispatch<SetStateAction<boolean>> }) {
+function PanelToggle({ label, on, onChange }: { label: string; on: boolean; onChange: (on: boolean) => void }) {
   return (
     <button
-      onClick={() => set((v) => !v)}
+      onClick={() => onChange(!on)}
       title={`${on ? "Hide" : "Show"} ${label}`}
       className={`rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors ${
         on ? "bg-accent text-white" : "bg-terminal-border/60 text-terminal-muted hover:text-terminal-text"
@@ -91,11 +91,14 @@ function PanelToggle({ label, on, set }: { label: string; on: boolean; set: Disp
 
 export default function Dashboard() {
   const [view, setView] = useState<View>("terminal");
-  // DOM ladder + Delta Histogram default hidden (dashboard default); the rest visible.
-  const [showDom, setShowDom] = useState(false);
-  const [showHist, setShowHist] = useState(false);
-  const [showCum, setShowCum] = useState(true);
-  const [showScanner, setShowScanner] = useState(true);
+  // pane visibility now lives in the store (persisted in vikings.ui.v1) so workspace presets can
+  // capture/restore it. Defaults: DOM + Delta Histogram hidden; Cumulative Delta + scanner visible.
+  const panes = useStore((s) => s.panes);
+  const setPaneVisible = useStore((s) => s.setPaneVisible);
+  const showDom = panes.dom;
+  const showHist = panes.hist;
+  const showCum = panes.cum;
+  const showScanner = panes.scanner;
   const [objectsOpen, setObjectsOpen] = useState(false);
   const setBlockSizeModalOpen = useStore((s) => s.setBlockSizeModalOpen);
   const showBarStats = useStore((s) => s.showBarStats);
@@ -166,10 +169,10 @@ export default function Dashboard() {
               extra={
                 <div className="flex items-center gap-2">
                   <div className="flex items-center gap-1">
-                    <PanelToggle label="DOM" on={showDom} set={setShowDom} />
-                    <PanelToggle label="Hist" on={showHist} set={setShowHist} />
-                    <PanelToggle label="Cum" on={showCum} set={setShowCum} />
-                    <PanelToggle label="Scan" on={showScanner} set={setShowScanner} />
+                    <PanelToggle label="DOM" on={showDom} onChange={(v) => setPaneVisible("dom", v)} />
+                    <PanelToggle label="Hist" on={showHist} onChange={(v) => setPaneVisible("hist", v)} />
+                    <PanelToggle label="Cum" on={showCum} onChange={(v) => setPaneVisible("cum", v)} />
+                    <PanelToggle label="Scan" on={showScanner} onChange={(v) => setPaneVisible("scanner", v)} />
                     <button
                       onClick={() => setShowBarStats(!showBarStats)}
                       title={`${showBarStats ? "Hide" : "Show"} Bar Statistics`}
@@ -254,7 +257,7 @@ export default function Dashboard() {
             )}
             {showHist && (
               <Panel title="Delta Histogram">
-                <DeltaHistogram onHide={() => setShowHist(false)} />
+                <DeltaHistogram onHide={() => setPaneVisible("hist", false)} />
               </Panel>
             )}
             {showCum && (
@@ -270,7 +273,7 @@ export default function Dashboard() {
             )}
             {showCum && (
               <Panel title="Cumulative Delta">
-                <CumDelta onHide={() => setShowCum(false)} />
+                <CumDelta onHide={() => setPaneVisible("cum", false)} />
               </Panel>
             )}
           </div>

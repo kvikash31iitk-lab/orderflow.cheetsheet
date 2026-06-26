@@ -8,6 +8,7 @@ import ConnectionStatus from "../widgets/ConnectionStatus";
 import SettingsModal from "./SettingsModal";
 import IndicatorsPanel from "../widgets/IndicatorsPanel";
 import AvwapManager from "../widgets/AvwapManager";
+import WorkspaceMenu from "../widgets/WorkspaceMenu";
 
 const DEFAULT_TFS = ["tick", "1m", "2m", "3m", "5m", "15m", "30m", "1h", "4h", "1D"];
 
@@ -226,6 +227,7 @@ export default function Header() {
         </button>
         <AvwapManager open={avwapMgrOpen} onClose={() => setAvwapMgrOpen(false)} />
       </div>
+      <WorkspaceMenu />
       <button onClick={toggleTheme} title="Toggle light / dark theme" className="tbtn-icon">
         {theme === "dark" ? <Moon size={14} /> : <Sun size={14} />}
       </button>

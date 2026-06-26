@@ -29,6 +29,7 @@ import { DELTA_SPIKE_SCRIPT, ANCHORED_VWAP_SCRIPT } from "../indicators/examples
 import { SC1_1604_SCRIPT } from "../indicators/sc1_1604";
 import type { DrawingObject, DrawingTool, SnapMode } from "../drawings/types";
 import { CHART_CANDLE_LIMIT, snapshotRequestForMode } from "../lib/limits";
+import type { ApplyWorkspaceOptions, WorkspaceSnapshot } from "../workspace/types";
 
 // Geometry of a floating workspace window (persisted per window id).
 export interface WindowRect {
@@ -64,6 +65,18 @@ function clampLayoutValue(key: keyof DashboardLayout, v: number): number {
   const [min, max] = LAYOUT_BOUNDS[key];
   return Math.max(min, Math.min(max, Math.round(v)));
 }
+
+// Which optional dashboard panes are visible. Lifted out of Dashboard's local state so workspace
+// presets can capture/restore them and they survive a reload. `barStats` keeps its own legacy key
+// (vikings.barstats.v1) for back-compat, so it is NOT duplicated here.
+export interface PaneVisibility {
+  dom: boolean; // DOM ladder column
+  hist: boolean; // Delta Histogram panel
+  cum: boolean; // Cumulative Delta panel
+  scanner: boolean; // right column (scanner + alerts)
+}
+export const DEFAULT_PANES: PaneVisibility = { dom: false, hist: false, cum: true, scanner: true };
+export type PaneId = keyof PaneVisibility;
 
 export const DEFAULT_SETTINGS: FootprintSettings = {
   tickMultiplier: 1,
@@ -348,6 +361,36 @@ function persistLayout(layout: DashboardLayout): void {
   }
 }
 
+// ----------------------------------------------- UI slice (pane visibility + theme), persisted
+// New in Phase 3A: pane visibility was previously Dashboard-local React state (reset every reload).
+// Lifting it here makes it durable AND lets workspace presets capture/restore it. Theme rides along
+// in the same key so a chosen light/dark mode also survives a reload.
+const UI_LS_KEY = "vikings.ui.v1";
+function loadPersistedUi(): { panes: PaneVisibility; theme: "dark" | "light" } {
+  const fallback = { panes: { ...DEFAULT_PANES }, theme: "light" as const };
+  try {
+    const raw = localStorage.getItem(UI_LS_KEY);
+    if (!raw) return fallback;
+    const p = JSON.parse(raw) as Partial<{ panes: Partial<PaneVisibility>; theme: string }>;
+    const panes = { ...DEFAULT_PANES };
+    if (p.panes && typeof p.panes === "object") {
+      (Object.keys(DEFAULT_PANES) as PaneId[]).forEach((k) => {
+        if (typeof p.panes![k] === "boolean") panes[k] = p.panes![k] as boolean;
+      });
+    }
+    return { panes, theme: p.theme === "dark" ? "dark" : "light" };
+  } catch {
+    return fallback;
+  }
+}
+function persistUi(panes: PaneVisibility, theme: "dark" | "light"): void {
+  try {
+    localStorage.setItem(UI_LS_KEY, JSON.stringify({ panes, theme }));
+  } catch {
+    /* ignore quota / unavailable storage */
+  }
+}
+
 // ----------------------------------------------- footprint settings (persisted)
 // Same manual pattern: a saved partial is merged OVER DEFAULT_SETTINGS with defensive
 // per-key validation (numbers must be finite, booleans must be booleans, unknown keys
@@ -518,6 +561,8 @@ interface State {
 
   // resizable dashboard panel sizes (persisted)
   layout: DashboardLayout;
+  // optional pane visibility (persisted in vikings.ui.v1; barStats keeps its legacy key)
+  panes: PaneVisibility;
 
   setSource: (src: "truedata" | "databento") => void;
   setSymbol: (s: string) => void;
@@ -528,6 +573,8 @@ interface State {
   setConsolidation: (n: number) => void;
   setChartDisplayMode: (m: "footprint" | "candle") => void;
   toggleTheme: () => void;
+  setTheme: (theme: "dark" | "light") => void;
+  setPaneVisible: (pane: PaneId, on: boolean) => void;
   setSettings: (patch: Partial<FootprintSettings>) => void;
   resetSettings: () => void;
   setShowBarStats: (v: boolean) => void;
@@ -589,6 +636,12 @@ interface State {
   setLayout: (patch: Partial<DashboardLayout>) => void;
   resetLayout: (key: keyof DashboardLayout) => void;
   resetAllLayout: () => void;
+  // reset pane SIZES + VISIBILITY (+ hide bar stats) to factory defaults. Layout/UI only — never
+  // touches drawings, AVWAPs, indicators, footprint settings, theme, or the current symbol.
+  resetWorkspaceLayout: () => void;
+  // workspace presets — apply a captured snapshot (layout/UI/context always; objects only when
+  // opts.replaceObjects). Persists every applied slice and reloads data + recomputes overlays.
+  applyWorkspaceSnapshot: (snapshot: WorkspaceSnapshot, opts?: ApplyWorkspaceOptions) => void;
   reset: () => void;
 }
 
@@ -607,6 +660,7 @@ const persistedBarStats = loadPersistedBarStats();
 const persistedWindows = loadPersistedWindows();
 const persistedLayout = loadPersistedLayout();
 const persistedSettings = loadPersistedSettings();
+const persistedUi = loadPersistedUi();
 
 export const useStore = create<State>((set, get) => ({
   // dashboard defaults (no persistence for these yet -> these are the fresh-open values)
@@ -623,7 +677,7 @@ export const useStore = create<State>((set, get) => ({
   footprintMode: "bidAsk",
   consolidation: 1,
   chartDisplayMode: "candle",
-  theme: "light",
+  theme: persistedUi.theme,
   settings: persistedSettings,
   blockSizeModalOpen: false,
   positions: [],
@@ -658,6 +712,7 @@ export const useStore = create<State>((set, get) => ({
   redoStack: [],
   windows: persistedWindows,
   layout: persistedLayout,
+  panes: persistedUi.panes,
 
   setSource: (src) => {
     // Use the CANONICAL upper-case symbol: the backend emits live candles as
@@ -693,7 +748,20 @@ export const useStore = create<State>((set, get) => ({
     // footprint = full cells on a smaller window. (Live WS candles always carry cells.)
     get().loadLiveSnapshot();
   },
-  toggleTheme: () => set({ theme: get().theme === "dark" ? "light" : "dark" }),
+  toggleTheme: () => {
+    const theme = get().theme === "dark" ? "light" : "dark";
+    set({ theme });
+    persistUi(get().panes, theme);
+  },
+  setTheme: (theme) => {
+    set({ theme });
+    persistUi(get().panes, theme);
+  },
+  setPaneVisible: (pane, on) => {
+    const panes = { ...get().panes, [pane]: on };
+    set({ panes });
+    persistUi(panes, get().theme);
+  },
   setSettings: (patch) => {
     const settings = { ...get().settings, ...patch };
     set({ settings });
@@ -742,6 +810,155 @@ export const useStore = create<State>((set, get) => ({
     const next = { ...DEFAULT_LAYOUT };
     set({ layout: next });
     persistLayout(next);
+  },
+  resetWorkspaceLayout: () => {
+    const layout = { ...DEFAULT_LAYOUT };
+    const panes = { ...DEFAULT_PANES };
+    set({ layout, panes, showBarStats: false });
+    persistLayout(layout);
+    persistUi(panes, get().theme);
+    persistBarStats(false, get().barStatsSettings);
+  },
+
+  applyWorkspaceSnapshot: (snap, opts) => {
+    const replace = !!opts?.replaceObjects;
+    const cur = get();
+    const sc = snap.context ?? ({} as WorkspaceSnapshot["context"]);
+
+    // --- defensive merges: an imported/old snapshot is never trusted blindly ---
+    // layout: clamp each known numeric key over defaults
+    const layout = { ...DEFAULT_LAYOUT };
+    if (snap.layout && typeof snap.layout === "object") {
+      (Object.keys(DEFAULT_LAYOUT) as (keyof DashboardLayout)[]).forEach((k) => {
+        const v = (snap.layout as DashboardLayout)[k];
+        if (typeof v === "number" && Number.isFinite(v)) layout[k] = clampLayoutValue(k, v);
+      });
+    }
+    // footprint settings: same per-key validation as loadPersistedSettings
+    const settings = { ...DEFAULT_SETTINGS };
+    if (snap.settings && typeof snap.settings === "object") {
+      const sink = settings as Record<string, number | boolean | string>;
+      const raw = snap.settings as unknown as Record<string, unknown>;
+      (Object.keys(DEFAULT_SETTINGS) as (keyof FootprintSettings)[]).forEach((k) => {
+        const v = raw[k];
+        if (SETTINGS_NUMERIC_KEYS.includes(k)) {
+          if (typeof v === "number" && Number.isFinite(v)) sink[k] = v;
+        } else if (SETTINGS_STRING_KEYS.includes(k)) {
+          if (typeof v === "string") sink[k] = v;
+        } else if (typeof v === "boolean") {
+          sink[k] = v;
+        }
+      });
+    }
+    // bar statistics settings — per-key validation (an imported snapshot is untrusted; a shallow
+    // spread would let garbage scalars poison the persisted vikings.barstats.v1 slice).
+    const barStatsSettings = { ...DEFAULT_BAR_STAT_SETTINGS };
+    const rawBs = (snap.barStatsSettings ?? {}) as unknown as Record<string, unknown>;
+    if (Array.isArray(rawBs.enabled)) {
+      barStatsSettings.enabled = rawBs.enabled.filter((x): x is BarStatMetricId => typeof x === "string");
+    }
+    if (typeof rawBs.preset === "string") barStatsSettings.preset = rawBs.preset;
+    if (rawBs.numberFormat === "compact" || rawBs.numberFormat === "absolute") barStatsSettings.numberFormat = rawBs.numberFormat;
+    if (typeof rawBs.percentDecimals === "number" && Number.isFinite(rawBs.percentDecimals)) {
+      barStatsSettings.percentDecimals = Math.max(0, Math.min(2, Math.round(rawBs.percentDecimals)));
+    }
+    if (typeof rawBs.colorIntensity === "number" && Number.isFinite(rawBs.colorIntensity)) {
+      barStatsSettings.colorIntensity = Math.max(0, Math.min(1, rawBs.colorIntensity));
+    }
+    (["buyColor", "sellColor", "neutralColor", "pocColor"] as const).forEach((c) => {
+      if (typeof rawBs[c] === "string") barStatsSettings[c] = rawBs[c] as string;
+    });
+    // pane visibility (four panes + bar statistics)
+    const panes = { ...DEFAULT_PANES };
+    const sp = snap.panes ?? ({} as WorkspaceSnapshot["panes"]);
+    (Object.keys(DEFAULT_PANES) as PaneId[]).forEach((k) => {
+      if (typeof sp[k] === "boolean") panes[k] = sp[k] as boolean;
+    });
+    const showBarStats = typeof sp.barStats === "boolean" ? sp.barStats : cur.showBarStats;
+    const theme: "dark" | "light" = snap.theme === "dark" ? "dark" : "light";
+    const snapMode: SnapMode = (["off", "ohlc", "poc", "vwap"] as SnapMode[]).includes(snap.snapMode as SnapMode)
+      ? (snap.snapMode as SnapMode)
+      : cur.snapMode;
+
+    // chart context (validated enums; unknowns keep the current value)
+    const source = sc.source === "truedata" || sc.source === "databento" ? sc.source : cur.source;
+    const symbol = typeof sc.symbol === "string" && sc.symbol ? sc.symbol : cur.symbol;
+    const timeframe = typeof sc.timeframe === "string" && sc.timeframe ? sc.timeframe : cur.timeframe;
+    const footprintMode = (["bidAsk", "delta", "volume", "volumePercent"] as FootprintMode[]).includes(sc.footprintMode as FootprintMode)
+      ? (sc.footprintMode as FootprintMode)
+      : cur.footprintMode;
+    const consolidation = typeof sc.consolidation === "number" && sc.consolidation > 0 ? sc.consolidation : cur.consolidation;
+    const chartDisplayMode = sc.chartDisplayMode === "footprint" || sc.chartDisplayMode === "candle" ? sc.chartDisplayMode : cur.chartDisplayMode;
+
+    // only a context change (symbol/tf/source/grouping/display-mode) needs a candle refetch — a
+    // pure layout/settings apply keeps the current candles so there's no reload flicker.
+    const contextChanged =
+      source !== cur.source ||
+      symbol !== cur.symbol ||
+      timeframe !== cur.timeframe ||
+      consolidation !== cur.consolidation ||
+      chartDisplayMode !== cur.chartDisplayMode;
+    if (contextChanged || replace) bumpRecomputeSeq();
+    const next: Partial<State> = {
+      source,
+      symbol,
+      timeframe,
+      footprintMode,
+      consolidation,
+      chartDisplayMode,
+      theme,
+      panes,
+      layout,
+      settings,
+      barStatsSettings,
+      showBarStats,
+      snapMode,
+    };
+    if (contextChanged) next.candles = [];
+    if (contextChanged || replace) next.indicatorOutputs = [];
+
+    if (replace) {
+      // REPLACE the chart objects (indicators / AVWAPs / drawings) — gated behind explicit intent.
+      const indicators = Array.isArray(snap.indicators)
+        ? snap.indicators.filter((i) => i && typeof i.id === "string" && typeof i.script === "string")
+        : [];
+      const mode =
+        snap.indicatorExecutionMode === "direct" || snap.indicatorExecutionMode === "disabled" || snap.indicatorExecutionMode === "sandbox"
+          ? snap.indicatorExecutionMode
+          : cur.indicatorExecutionMode;
+      const drawings = Array.isArray(snap.drawings)
+        ? snap.drawings.filter(
+            (d) =>
+              !!d &&
+              typeof d.id === "string" &&
+              typeof d.type === "string" &&
+              typeof d.symbol === "string" &&
+              Array.isArray(d.points),
+          )
+        : [];
+      next.indicators = indicators;
+      next.indicatorExecutionMode = mode;
+      next.drawings = drawings;
+      next.undoStack = pushHistory(cur.undoStack, cur.drawings); // one undo entry restores prior objects
+      next.redoStack = [];
+      next.selectedDrawingId = null;
+      next.selectedIndicatorId = null;
+      next.pendingAnchorIndicatorId = null;
+      next.pendingAnchorTool = null;
+      persistIndicators(indicators, mode);
+      persistDrawings(drawings);
+    }
+
+    set(next);
+    // persist the always-applied slices so a reload keeps the applied workspace
+    persistLayout(layout);
+    persistSettings(settings);
+    persistBarStats(showBarStats, barStatsSettings);
+    persistUi(panes, theme);
+    // refetch candles only when the chart context changed; recompute overlays when the candle set or
+    // the indicator set changed.
+    if (contextChanged) get().loadLiveSnapshot();
+    if (contextChanged || replace) void get().recomputeIndicators();
   },
 
   loadSnapshot: (symbol, timeframe, candles) => {
