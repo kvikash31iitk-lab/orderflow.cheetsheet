@@ -3,6 +3,9 @@ import { Clapperboard, Crosshair, FlaskConical, Loader2, X } from "lucide-react"
 import { api } from "../api/rest";
 import { consolidatedRowSize } from "../lib/rowsize";
 import { useStore } from "../store/useStore";
+import { useContextMenu } from "../components/TerminalContextMenu";
+import DomRowMenu from "./DomRowMenu";
+import { DEFAULT_DRAWING_STYLE, drawingDisplayName, makeDrawingId } from "../drawings/types";
 
 const ROWS = 14; // price rows above/below mid
 const SMOOTH_WIN = 4; // moving-average window over pulses (graceful depth transitions)
@@ -34,6 +37,9 @@ export default function DomLadder() {
   const [pulse, setPulse] = useState(0); // drives the synthetic depth refresh
   const scrollRef = useRef<HTMLDivElement>(null);
   const replayActive = useStore((s) => s.replayActive);
+  const addDrawing = useStore((s) => s.addDrawing);
+  const drawings = useStore((s) => s.drawings);
+  const { menu, open, close } = useContextMenu<{ row: { price: number; bidSize: number; askSize: number } }>();
 
   // seed positions/orders once on mount; live updates arrive over the WS
   useEffect(() => {
@@ -96,6 +102,28 @@ export default function DomLadder() {
   const market = (side: "buy" | "sell") =>
     api.tradeOrder({ symbol, side, type: "market", qty }).catch(() => {});
   const cancel = (id: number) => api.tradeCancel(id).catch(() => {});
+
+  const recenter = () => {
+    if (price != null) setLadderMid(Math.round(price / rowSize) * rowSize);
+    const el = scrollRef.current;
+    if (el) el.scrollTop = (el.scrollHeight - el.clientHeight) / 2;
+  };
+  // drop a horizontal line at a DOM price (reuses the standard drawing model — renders on the chart)
+  const addHLine = (p: number) => {
+    const now = Date.now();
+    addDrawing({
+      id: makeDrawingId(),
+      type: "horizontal-line",
+      name: drawingDisplayName("horizontal-line", drawings),
+      symbol,
+      points: [{ time: last?.startTime ?? now, price: p }],
+      visible: true,
+      locked: false,
+      createdAt: now,
+      updatedAt: now,
+      style: { ...DEFAULT_DRAWING_STYLE },
+    });
+  };
 
   const ordersAt = (p: number) =>
     orders.filter((o) => o.symbol === symbol && o.price != null && Math.abs(o.price - p) < rowSize / 2);
@@ -166,13 +194,7 @@ export default function DomLadder() {
           <div className="flex items-center gap-1.5">
             <span className="text-[9px] font-bold uppercase tracking-wider text-terminal-muted">Qty</span>
             <button
-              onClick={() => {
-                if (price != null) {
-                  setLadderMid(Math.round(price / rowSize) * rowSize);
-                }
-                const el = scrollRef.current;
-                if (el) el.scrollTop = (el.scrollHeight - el.clientHeight) / 2;
-              }}
+              onClick={recenter}
               className="dom-qty-btn flex items-center gap-1 uppercase"
               title="Recenter ladder on last price"
             >
@@ -247,6 +269,7 @@ export default function DomLadder() {
                 return (
                   <tr
                     key={r.price}
+                    onContextMenu={(e) => open(e, { row: { price: r.price, bidSize: r.bidSize, askSize: r.askSize } })}
                     className={`border-t border-terminal-border/10 transition-colors duration-100 ${
                       atMid
                         ? "bg-accent/[0.07]"
@@ -362,6 +385,19 @@ export default function DomLadder() {
         </span>
         <span>No real risk</span>
       </div>
+
+      {menu && (
+        <DomRowMenu
+          x={menu.x}
+          y={menu.y}
+          row={menu.row}
+          dp={dp}
+          symbol={symbol}
+          onRecenter={recenter}
+          onAddHLine={addHLine}
+          onClose={close}
+        />
+      )}
     </div>
   );
 }

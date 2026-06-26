@@ -1,5 +1,5 @@
 // Right-click menu for an alert row — open the alert's symbol/timeframe in the chart and copy helpers.
-import { Clock, Copy, LineChart, MessageSquare } from "lucide-react";
+import { Clock, Copy, LineChart, MessageSquare, Tag } from "lucide-react";
 import { useStore } from "../store/useStore";
 import { MenuItem, MenuSeparator, TerminalMenu } from "../components/TerminalContextMenu";
 import { formatIstDateTime } from "../lib/time";
@@ -28,6 +28,7 @@ export default function AlertRowMenu({ x, y, alert, onClose }: { x: number; y: n
       <MenuSeparator />
       <MenuItem icon={<Copy size={13} />} label="Copy alert summary" onClick={act(() => copyText(summary))} />
       <MenuItem icon={<MessageSquare size={13} />} label="Copy alert message" onClick={act(() => copyText(alert.message))} />
+      <MenuItem icon={<Tag size={13} />} label="Copy symbol" onClick={act(() => copyText(alert.symbol))} />
       <MenuItem icon={<Clock size={13} />} label="Copy alert time" onClick={act(() => copyText(timeStr))} />
     </TerminalMenu>
   );

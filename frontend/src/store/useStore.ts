@@ -1252,3 +1252,9 @@ export const useStore = create<State>((set, get) => ({
 
   reset: () => set({ candles: [], alerts: [], replay: null, replayActive: false }),
 }));
+
+// Dev-only handle for local manual verification (e.g. seeding a sample alert to exercise the alert
+// context menu). `import.meta.env.DEV` is false in production builds, so Vite drops this entirely.
+if (import.meta.env.DEV) {
+  (window as unknown as { __vikingsStore?: typeof useStore }).__vikingsStore = useStore;
+}

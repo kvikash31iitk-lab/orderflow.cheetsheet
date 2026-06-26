@@ -5,6 +5,7 @@ import {
   ArrowDown,
   ArrowUp,
   Braces,
+  Clock,
   Copy,
   CopyPlus,
   Eye,
@@ -17,6 +18,7 @@ import {
 } from "lucide-react";
 import { useStore } from "../store/useStore";
 import { MenuItem, MenuSeparator, TerminalMenu } from "../components/TerminalContextMenu";
+import { formatIstDateTime } from "../lib/time";
 
 export default function IndicatorContextMenu({
   indicatorId,
@@ -58,6 +60,19 @@ export default function IndicatorContextMenu({
         label={ind.enabled ? "Hide" : "Show"}
         onClick={act(() => toggleIndicator(indicatorId))}
       />
+      {ind.kind === "anchored-vwap" && Number(ind.inputs?.anchorTime ?? 0) > 0 && (
+        <MenuItem
+          icon={<Clock size={13} />}
+          label="Copy anchor time"
+          onClick={act(() => {
+            try {
+              void navigator.clipboard?.writeText(`${formatIstDateTime(Number(ind.inputs.anchorTime))} IST`)?.catch(() => {});
+            } catch {
+              /* clipboard API unavailable */
+            }
+          })}
+        />
+      )}
       <MenuSeparator />
       <MenuItem
         icon={<Pencil size={13} />}
