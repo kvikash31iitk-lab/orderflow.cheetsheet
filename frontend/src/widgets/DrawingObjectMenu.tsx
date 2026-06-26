@@ -1,9 +1,10 @@
 // Right-click menu for a drawing hit directly on the chart canvas. The chart resolves which drawing
 // the cursor is over (drawingController.pickObjectAt) and selects it; this renders the actions.
-import { ArrowDown, ArrowDownToLine, ArrowUp, ArrowUpToLine, Copy, Eye, EyeOff, Layers, Lock, LockOpen, MapPin, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowDownToLine, ArrowUp, ArrowUpToLine, Copy, Eye, EyeOff, Layers, Lock, LockOpen, MapPin, Settings, Trash2 } from "lucide-react";
 import { useStore } from "../store/useStore";
 import { MenuItem, MenuSeparator, Submenu, TerminalMenu } from "../components/TerminalContextMenu";
 import { formatIstDateTime } from "../lib/time";
+import { drawingHasStyleEditor } from "../drawings/types";
 
 function copyText(text: string) {
   try {
@@ -19,6 +20,7 @@ export default function DrawingObjectMenu({ drawingId, x, y, onClose }: { drawin
   const toggleLock = useStore((s) => s.toggleDrawingLock);
   const removeDrawing = useStore((s) => s.removeDrawing);
   const reorderDrawing = useStore((s) => s.reorderDrawing);
+  const setDrawingSettingsId = useStore((s) => s.setDrawingSettingsId);
   if (!drawing) return null;
 
   const act = (fn: () => void) => () => {
@@ -41,6 +43,9 @@ export default function DrawingObjectMenu({ drawingId, x, y, onClose }: { drawin
         label={drawing.locked ? "Unlock" : "Lock"}
         onClick={act(() => toggleLock(drawing.id))}
       />
+      {drawingHasStyleEditor(drawing.type) && (
+        <MenuItem icon={<Settings size={13} />} label="Settings…" onClick={act(() => setDrawingSettingsId(drawing.id))} />
+      )}
       <MenuSeparator />
       <Submenu icon={<Layers size={13} />} label="Order">
         <MenuItem icon={<ArrowUpToLine size={13} />} label="Bring to front" onClick={act(() => reorderDrawing(drawing.id, "front"))} />

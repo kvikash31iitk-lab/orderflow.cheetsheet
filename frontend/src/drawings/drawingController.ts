@@ -55,7 +55,11 @@ export function createDrawingController(opts: {
   host: HTMLDivElement;
   chart: IChartApi;
   series: FootprintSeriesApi;
-}): { dispose: () => void; pickObjectAt: (local: Px) => { drawing: DrawingObject | null; avwapId: string | null } } {
+}): {
+  dispose: () => void;
+  pickObjectAt: (local: Px) => { drawing: DrawingObject | null; avwapId: string | null; indicatorId: string | null };
+  dataToPx: (pt: ChartPoint) => Px | null;
+} {
   const { host, chart, series } = opts;
 
   let draft: DrawingObject | null = null;
@@ -172,8 +176,11 @@ export function createDrawingController(opts: {
     return null;
   };
 
-  // pick an enabled Anchored VWAP whose plotted line passes near `local` (returns the
-  // indicator id). Tests every AVWAP line segment (incl. SD bands) on the price pane.
+  const ANCHOR_TOL = 10; // bigger grab radius for the AVWAP anchor point than the thin line
+  const SHAPE_TOL = 9; // marker / label half-box for indicator shapes
+
+  // pick an enabled Anchored VWAP near `local` (returns the indicator id). Tests the anchor point
+  // (the first plotted point — bigger radius) then every line segment (incl. SD bands), topmost-first.
   const pickAvwapAt = (local: Px): string | null => {
     const st = useStore.getState();
     const avwapIds = new Set(
@@ -185,12 +192,60 @@ export function createDrawingController(opts: {
     );
     for (let li = lines.length - 1; li >= 0; li--) {
       const o = lines[li];
-      if (o.type !== "line") continue;
+      if (o.type !== "line" || !o.points.length) continue;
       const pts = o.points;
+      const a0 = dataToPx({ time: pts[0].time, price: pts[0].value });
+      if (a0 && dist(local, a0) <= ANCHOR_TOL) return o.indicatorId;
       for (let i = 1; i < pts.length; i++) {
         const a = dataToPx({ time: pts[i - 1].time, price: pts[i - 1].value });
         const b = dataToPx({ time: pts[i].time, price: pts[i].value });
         if (a && b && distToSegment(local, a, b) <= HIT_TOLERANCE) return o.indicatorId;
+      }
+    }
+    return null;
+  };
+
+  // pick an enabled NON-AVWAP indicator overlay on the PRICE pane near `local` (returns the
+  // indicator id). Lines -> distance-to-segment; shapes/markers -> the rendered glyph box (the
+  // ±10px vertical offset matches footprintSeries _drawIndicatorShapes); zones -> inside the rect.
+  // Conservative tolerances; histograms / sub-pane outputs are never hit-tested here.
+  const pickIndicatorAt = (local: Px): string | null => {
+    const st = useStore.getState();
+    const ids = new Set(st.indicators.filter((i) => i.enabled && i.kind !== "anchored-vwap").map((i) => i.id));
+    if (!ids.size) return null;
+    const outs = st.indicatorOutputs.filter((o) => {
+      if (!ids.has(o.indicatorId)) return false;
+      if (o.type === "histogram") return false; // sub-pane only
+      // match the renderer (_drawIndicatorLines): price-pane = anything NOT delta/cumDelta, so
+      // undefined- AND custom-pane lines (e.g. SC1 strength) paint here and must be hit-testable.
+      if (o.type === "line" && (o.pane === "delta" || o.pane === "cumDelta")) return false;
+      return true; // shapes + zones are always price-pane
+    });
+    for (let oi = outs.length - 1; oi >= 0; oi--) {
+      const o = outs[oi];
+      if (o.type === "line") {
+        const pts = o.points;
+        for (let i = 1; i < pts.length; i++) {
+          const a = dataToPx({ time: pts[i - 1].time, price: pts[i - 1].value });
+          const b = dataToPx({ time: pts[i].time, price: pts[i].value });
+          if (a && b && distToSegment(local, a, b) <= HIT_TOLERANCE) return o.indicatorId;
+        }
+      } else if (o.type === "shape") {
+        const p = dataToPx({ time: o.time, price: o.price });
+        if (p) {
+          const y = p.y + (o.position === "above" ? -10 : o.position === "below" ? 10 : 0);
+          if (Math.abs(local.x - p.x) <= SHAPE_TOL && Math.abs(local.y - y) <= SHAPE_TOL + 3) return o.indicatorId;
+        }
+      } else if (o.type === "zone") {
+        const a = dataToPx({ time: o.fromTime, price: o.high });
+        const b = dataToPx({ time: o.toTime, price: o.low });
+        if (a && b) {
+          const x0 = Math.min(a.x, b.x);
+          const x1 = Math.max(a.x, b.x);
+          const y0 = Math.min(a.y, b.y);
+          const y1 = Math.max(a.y, b.y);
+          if (local.x >= x0 && local.x <= x1 && local.y >= y0 && local.y <= y1) return o.indicatorId;
+        }
       }
     }
     return null;
@@ -506,16 +561,21 @@ export function createDrawingController(opts: {
   syncPanAndCursor();
   requestUpdate();
 
-  // right-click hit-test for the chart context menu: same pick logic as left-click selection,
-  // topmost drawing first, then an Anchored VWAP line. No mutation, no gesture.
-  const pickObjectAt = (local: Px): { drawing: DrawingObject | null; avwapId: string | null } => {
+  // right-click hit-test for the chart context menu. Priority: drawing (topmost) > Anchored VWAP >
+  // other indicator overlay > chart menu (caller's fallback). No mutation, no gesture.
+  const pickObjectAt = (
+    local: Px,
+  ): { drawing: DrawingObject | null; avwapId: string | null; indicatorId: string | null } => {
     const drawing = pickAt(local);
-    if (drawing) return { drawing, avwapId: null };
-    return { drawing: null, avwapId: pickAvwapAt(local) };
+    if (drawing) return { drawing, avwapId: null, indicatorId: null };
+    const avwapId = pickAvwapAt(local);
+    if (avwapId) return { drawing: null, avwapId, indicatorId: null };
+    return { drawing: null, avwapId: null, indicatorId: pickIndicatorAt(local) };
   };
 
   return {
     pickObjectAt,
+    dataToPx, // pure data-point -> pixel converter (used by dev-only hit-zone diagnostics)
     dispose() {
       host.removeEventListener("pointerdown", onPointerDown);
       host.removeEventListener("pointermove", onPointerMove);

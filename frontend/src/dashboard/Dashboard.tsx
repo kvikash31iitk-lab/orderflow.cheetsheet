@@ -18,6 +18,7 @@ import DrawingToolbar from "./DrawingToolbar";
 import ObjectTreePanel from "../widgets/ObjectTreePanel";
 import IndicatorSettingsDialog from "../widgets/IndicatorSettingsDialog";
 import IndicatorSourceDialog from "../widgets/IndicatorSourceDialog";
+import DrawingSettingsModal from "../widgets/DrawingSettingsModal";
 import Splitter from "../components/Splitter";
 import { MenuItem, TerminalMenu, useContextMenu } from "../components/TerminalContextMenu";
 
@@ -142,6 +143,7 @@ export default function Dashboard() {
       <ObjectTreePanel open={objectsOpen} onClose={() => setObjectsOpen(false)} />
       <IndicatorSettingsDialog />
       <IndicatorSourceDialog />
+      <DrawingSettingsModal />
       <Header />
       <Tabs view={view} setView={setView} />
 

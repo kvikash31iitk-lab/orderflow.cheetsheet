@@ -19,6 +19,7 @@ import AvwapSelectionToolbar from "../widgets/AvwapSelectionToolbar";
 import IndicatorLegend from "../widgets/IndicatorLegend";
 import IndicatorContextMenu from "../widgets/IndicatorContextMenu";
 import DrawingObjectMenu from "../widgets/DrawingObjectMenu";
+import AvwapObjectMenu from "../widgets/AvwapObjectMenu";
 import FootprintContextMenu from "../dashboard/FootprintContextMenu";
 import {
   DARK_PALETTE,
@@ -59,8 +60,23 @@ export default function FootprintChart() {
   const lastSymbolRef = useRef(symbol);
   // right-click footprint context menu — cursor position + the price/time under the click
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; price: number | null; time: number | null } | null>(null);
-  // right-click directly on a chart object (drawing / Anchored VWAP) — opens an object-specific menu
-  const [objMenu, setObjMenu] = useState<{ kind: "drawing" | "avwap"; id: string; x: number; y: number } | null>(null);
+  // right-click directly on a chart object (drawing / Anchored VWAP / indicator overlay) — opens an
+  // object-specific menu. AVWAP carries the resolved anchor + nearest value + center target.
+  const [objMenu, setObjMenu] = useState<
+    | { kind: "drawing"; id: string; x: number; y: number }
+    | {
+        kind: "avwap";
+        id: string;
+        x: number;
+        y: number;
+        anchorTime: number | null;
+        anchorPrice: number | null;
+        valueHere: number | null;
+        centerTime: number | null;
+      }
+    | { kind: "indicator"; id: string; x: number; y: number }
+    | null
+  >(null);
 
   // fit the visible range + re-enable price autoscale (native APIs only; safe)
   const resetView = () => {
@@ -68,6 +84,19 @@ export default function FootprintChart() {
     if (!chart) return;
     chart.timeScale().fitContent();
     chart.priceScale("right").applyOptions({ autoScale: true });
+  };
+
+  // center the visible range on a candle time (used by the AVWAP "Center on anchor" action). Native
+  // setVisibleLogicalRange only — no scroll hacks, no autoscale change. No-op if the time isn't loaded.
+  const centerOnTime = (time: number | null) => {
+    const chart = chartRef.current;
+    if (!chart || time == null) return;
+    const cs = useStore.getState().candles;
+    const idx = cs.findIndex((c) => c.startTime === time);
+    if (idx < 0) return;
+    const vr = chart.timeScale().getVisibleLogicalRange();
+    const half = vr ? (vr.to - vr.from) / 2 : 30;
+    chart.timeScale().setVisibleLogicalRange({ from: idx - half, to: idx + half });
   };
 
   // init the chart + custom series once
@@ -99,6 +128,13 @@ export default function FootprintChart() {
     // chart pan while a tool is armed or a gesture is in progress; restores it after.
     const drawingController = createDrawingController({ host: hostRef.current, chart, series });
     drawingControllerRef.current = drawingController;
+    // dev-only hit-zone diagnostic for deterministic verification (data point -> chart pixel).
+    // import.meta.env.DEV is false in production builds, so Vite drops this entirely.
+    if (import.meta.env.DEV) {
+      (window as unknown as { __vikingsChart?: unknown }).__vikingsChart = {
+        dataToPx: (time: number, price: number) => drawingController.dataToPx({ time, price }),
+      };
+    }
 
     // click-to-anchor: acts only while a placement mode is active. Two modes:
     //  - pendingAnchorTool "anchored-vwap": CREATE a new AVWAP at the clicked candle.
@@ -252,9 +288,43 @@ export default function FootprintChart() {
           return;
         }
         if (hit?.avwapId) {
-          useStore.getState().selectIndicator(hit.avwapId);
+          // resolve the anchor time/price + the AVWAP value nearest the cursor from the plotted line
+          const st = useStore.getState();
+          const ind = st.indicators.find((i) => i.id === hit.avwapId);
+          const lineOut = st.indicatorOutputs.find(
+            (o) => o.type === "line" && o.indicatorId === hit.avwapId && (o.pane ?? "price") === "price",
+          );
+          const anchorTime = ind ? Number(ind.inputs.anchorTime ?? 0) || null : null;
+          let anchorPrice: number | null = null;
+          let valueHere: number | null = null;
+          let centerTime: number | null = null;
+          if (lineOut && lineOut.type === "line" && lineOut.points.length) {
+            centerTime = lineOut.points[0].time;
+            anchorPrice = lineOut.points[0].value; // AVWAP value at the anchor
+            const ct = chart ? chart.timeScale().coordinateToTime(local.x) : null;
+            const cursorMs = typeof ct === "number" ? ct * 1000 : null;
+            if (cursorMs != null) {
+              let best = lineOut.points[0];
+              let bd = Math.abs(best.time - cursorMs);
+              for (const p of lineOut.points) {
+                const d = Math.abs(p.time - cursorMs);
+                if (d < bd) {
+                  bd = d;
+                  best = p;
+                }
+              }
+              valueHere = best.value;
+            }
+          }
+          st.selectIndicator(hit.avwapId);
           setCtxMenu(null);
-          setObjMenu({ kind: "avwap", id: hit.avwapId, x: e.clientX, y: e.clientY });
+          setObjMenu({ kind: "avwap", id: hit.avwapId, x: e.clientX, y: e.clientY, anchorTime, anchorPrice, valueHere, centerTime });
+          return;
+        }
+        if (hit?.indicatorId) {
+          // a non-AVWAP indicator overlay (line / marker / zone) -> its existing menu (no select)
+          setCtxMenu(null);
+          setObjMenu({ kind: "indicator", id: hit.indicatorId, x: e.clientX, y: e.clientY });
           return;
         }
         // 2) empty chart space -> the existing footprint menu, with price/time under the cursor
@@ -329,6 +399,18 @@ export default function FootprintChart() {
         <DrawingObjectMenu drawingId={objMenu.id} x={objMenu.x} y={objMenu.y} onClose={() => setObjMenu(null)} />
       )}
       {objMenu?.kind === "avwap" && (
+        <AvwapObjectMenu
+          indicatorId={objMenu.id}
+          x={objMenu.x}
+          y={objMenu.y}
+          anchorTime={objMenu.anchorTime}
+          anchorPrice={objMenu.anchorPrice}
+          valueHere={objMenu.valueHere}
+          onCenter={() => centerOnTime(objMenu.centerTime)}
+          onClose={() => setObjMenu(null)}
+        />
+      )}
+      {objMenu?.kind === "indicator" && (
         <IndicatorContextMenu indicatorId={objMenu.id} x={objMenu.x} y={objMenu.y} onClose={() => setObjMenu(null)} />
       )}
     </div>

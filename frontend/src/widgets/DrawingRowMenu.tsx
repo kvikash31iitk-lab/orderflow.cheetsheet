@@ -1,9 +1,8 @@
-// Right-click menu for a drawing row in the Object Tree. Uses the existing drawing store actions
-// (no z-order or per-drawing settings dialog exists, so those are intentionally omitted).
-import { Copy, Crosshair, Eye, EyeOff, Lock, LockOpen, Trash2 } from "lucide-react";
+// Right-click menu for a drawing row in the Object Tree. Uses the existing drawing store actions.
+import { Copy, Crosshair, Eye, EyeOff, Lock, LockOpen, Settings, Trash2 } from "lucide-react";
 import { useStore } from "../store/useStore";
 import { MenuItem, MenuSeparator, TerminalMenu } from "../components/TerminalContextMenu";
-import type { DrawingObject } from "../drawings/types";
+import { drawingHasStyleEditor, type DrawingObject } from "../drawings/types";
 
 function copyText(text: string) {
   try {
@@ -19,6 +18,7 @@ export default function DrawingRowMenu({ x, y, drawing, onClose }: { x: number; 
   const removeDrawing = useStore((s) => s.removeDrawing);
   const selectDrawing = useStore((s) => s.selectDrawing);
   const setActiveTool = useStore((s) => s.setActiveTool);
+  const setDrawingSettingsId = useStore((s) => s.setDrawingSettingsId);
   const act = (fn: () => void) => () => {
     fn();
     onClose();
@@ -46,6 +46,9 @@ export default function DrawingRowMenu({ x, y, drawing, onClose }: { x: number; 
         label={drawing.locked ? "Unlock" : "Lock"}
         onClick={act(() => toggleLock(drawing.id))}
       />
+      {drawingHasStyleEditor(drawing.type) && (
+        <MenuItem icon={<Settings size={13} />} label="Settings…" onClick={act(() => setDrawingSettingsId(drawing.id))} />
+      )}
       <MenuSeparator />
       <MenuItem icon={<Copy size={13} />} label="Copy summary" onClick={act(() => copyText(summary))} />
       <MenuSeparator />

@@ -503,6 +503,9 @@ interface State {
   drawings: DrawingObject[];
   activeTool: DrawingTool; // "select" = idle cursor; otherwise a placement tool is armed
   selectedDrawingId: string | null;
+  // a drawing whose Settings modal is open (style editor), or null. Set from the canvas /
+  // object-tree right-click menu; cleared on close.
+  drawingSettingsId: string | null;
   // an Anchored VWAP (indicator) selected on the chart (mutually exclusive with a
   // selected drawing). null = no indicator selected. Drives the AVWAP selection toolbar.
   selectedIndicatorId: string | null;
@@ -558,6 +561,7 @@ interface State {
   setIndicatorsPanelOpen: (open: boolean) => void;
   setFootprintSettingsOpen: (open: boolean) => void;
   setSettingsIndicatorId: (id: string | null) => void;
+  setDrawingSettingsId: (id: string | null) => void;
   setSourceIndicatorId: (id: string | null) => void;
   moveIndicator: (id: string, dir: -1 | 1) => void;
   duplicateIndicator: (id: string) => void;
@@ -645,6 +649,7 @@ export const useStore = create<State>((set, get) => ({
   sourceIndicatorId: null,
 
   drawings: persistedDrawings,
+  drawingSettingsId: null,
   activeTool: "select",
   selectedDrawingId: null,
   selectedIndicatorId: null,
@@ -1203,6 +1208,9 @@ export const useStore = create<State>((set, get) => ({
     const sibs = cur.drawings.filter((d) => d.symbol === target.symbol);
     const i = sibs.findIndex((d) => d.id === id);
     if (i < 0) return;
+    // no-op when already at the requested extreme: don't push an undo entry or rewrite storage
+    if ((dir === "front" || dir === "forward") && i === sibs.length - 1) return;
+    if ((dir === "back" || dir === "backward") && i === 0) return;
     sibs.splice(i, 1);
     if (dir === "front") sibs.push(target);
     else if (dir === "back") sibs.unshift(target);
@@ -1213,6 +1221,7 @@ export const useStore = create<State>((set, get) => ({
     persistDrawings(drawings);
   },
   // selecting a drawing clears any AVWAP selection (one chart object selected at a time)
+  setDrawingSettingsId: (id) => set({ drawingSettingsId: id }),
   selectDrawing: (id) => set({ selectedDrawingId: id, selectedIndicatorId: id ? null : get().selectedIndicatorId }),
   selectIndicator: (id) => set({ selectedIndicatorId: id, selectedDrawingId: id ? null : get().selectedDrawingId }),
   toggleDrawingVisible: (id) => {

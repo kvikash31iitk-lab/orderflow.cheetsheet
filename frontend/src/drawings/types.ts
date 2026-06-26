@@ -145,3 +145,10 @@ export function drawingDisplayName(type: DrawingTool, existing: DrawingObject[])
 export function pointsForTool(tool: DrawingTool): 0 | 1 | 2 {
   return toolDef(tool)?.points ?? 2;
 }
+
+// Whether a drawing's style is user-editable. "measure" renders with a fixed, direction-derived
+// palette (DrawingPrimitive ignores its style), so offering a style editor for it would be a dead
+// control — callers hide the "Settings…" affordance for these types.
+export function drawingHasStyleEditor(type: DrawingTool): boolean {
+  return type !== "measure";
+}
