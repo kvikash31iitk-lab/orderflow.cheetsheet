@@ -569,6 +569,8 @@ interface State {
   addDrawing: (d: DrawingObject) => void;
   updateDrawing: (id: string, patch: Partial<DrawingObject>) => void;
   removeDrawing: (id: string) => void;
+  // z-order (paint/array order; reorders only within the same symbol). Coordinates are never touched.
+  reorderDrawing: (id: string, dir: "front" | "back" | "forward" | "backward") => void;
   selectDrawing: (id: string | null) => void;
   selectIndicator: (id: string | null) => void;
   toggleDrawingVisible: (id: string) => void;
@@ -1189,6 +1191,25 @@ export const useStore = create<State>((set, get) => ({
       undoStack: pushHistory(cur.undoStack, cur.drawings),
       redoStack: [],
     });
+    persistDrawings(drawings);
+  },
+  reorderDrawing: (id, dir) => {
+    const cur = get();
+    const target = cur.drawings.find((d) => d.id === id);
+    if (!target) return;
+    // reorder ONLY within the same symbol (other symbols never paint together with it); coordinates
+    // are untouched, only array position changes. Array order == paint/pick order (last = on top).
+    const others = cur.drawings.filter((d) => d.symbol !== target.symbol);
+    const sibs = cur.drawings.filter((d) => d.symbol === target.symbol);
+    const i = sibs.findIndex((d) => d.id === id);
+    if (i < 0) return;
+    sibs.splice(i, 1);
+    if (dir === "front") sibs.push(target);
+    else if (dir === "back") sibs.unshift(target);
+    else if (dir === "forward") sibs.splice(Math.min(sibs.length, i + 1), 0, target);
+    else sibs.splice(Math.max(0, i - 1), 0, target); // "backward"
+    const drawings = [...others, ...sibs];
+    set({ drawings, undoStack: pushHistory(cur.undoStack, cur.drawings), redoStack: [] });
     persistDrawings(drawings);
   },
   // selecting a drawing clears any AVWAP selection (one chart object selected at a time)

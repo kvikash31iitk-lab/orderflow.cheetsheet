@@ -17,6 +17,8 @@ import { toolDef } from "../drawings/types";
 import DrawingSelectionToolbar from "../widgets/DrawingSelectionToolbar";
 import AvwapSelectionToolbar from "../widgets/AvwapSelectionToolbar";
 import IndicatorLegend from "../widgets/IndicatorLegend";
+import IndicatorContextMenu from "../widgets/IndicatorContextMenu";
+import DrawingObjectMenu from "../widgets/DrawingObjectMenu";
 import FootprintContextMenu from "../dashboard/FootprintContextMenu";
 import {
   DARK_PALETTE,
@@ -36,6 +38,7 @@ export default function FootprintChart() {
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<FootprintSeriesApi | null>(null);
   const entryLineRef = useRef<IPriceLine | null>(null);
+  const drawingControllerRef = useRef<ReturnType<typeof createDrawingController> | null>(null);
 
   const candles = useStore((s) => s.candles);
   const footprintMode = useStore((s) => s.footprintMode);
@@ -56,6 +59,8 @@ export default function FootprintChart() {
   const lastSymbolRef = useRef(symbol);
   // right-click footprint context menu — cursor position + the price/time under the click
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; price: number | null; time: number | null } | null>(null);
+  // right-click directly on a chart object (drawing / Anchored VWAP) — opens an object-specific menu
+  const [objMenu, setObjMenu] = useState<{ kind: "drawing" | "avwap"; id: string; x: number; y: number } | null>(null);
 
   // fit the visible range + re-enable price autoscale (native APIs only; safe)
   const resetView = () => {
@@ -93,6 +98,7 @@ export default function FootprintChart() {
     // handlers to the chart host (create / select / move / resize / delete). Disables
     // chart pan while a tool is armed or a gesture is in progress; restores it after.
     const drawingController = createDrawingController({ host: hostRef.current, chart, series });
+    drawingControllerRef.current = drawingController;
 
     // click-to-anchor: acts only while a placement mode is active. Two modes:
     //  - pendingAnchorTool "anchored-vwap": CREATE a new AVWAP at the clicked candle.
@@ -136,6 +142,7 @@ export default function FootprintChart() {
     return () => {
       chart.unsubscribeClick(onChartClick);
       drawingController.dispose();
+      drawingControllerRef.current = null;
       unregisterChart("main");
       entryLineRef.current = null;
       chart.remove();
@@ -228,19 +235,38 @@ export default function FootprintChart() {
       onContextMenu={(e) => {
         // open OUR menu only inside the chart area; right-click elsewhere keeps the browser menu
         e.preventDefault();
-        // resolve the price/time under the cursor via native chart APIs (for Copy actions)
-        let price: number | null = null;
-        let time: number | null = null;
         const host = hostRef.current;
         const chart = chartRef.current;
         const series = seriesRef.current;
-        if (host && chart && series) {
-          const r = host.getBoundingClientRect();
-          const t = chart.timeScale().coordinateToTime(e.clientX - r.left);
+        if (!host) return;
+        const r = host.getBoundingClientRect();
+        const local = { x: e.clientX - r.left, y: e.clientY - r.top };
+        // 1) directly on a chart object? open an object-specific menu (drawing topmost, then AVWAP).
+        // Right-click only selects + opens the menu — it never starts a gesture (the pointer
+        // controller ignores button !== 0) and never pans/zooms/places an order.
+        const hit = drawingControllerRef.current?.pickObjectAt(local);
+        if (hit?.drawing) {
+          useStore.getState().selectDrawing(hit.drawing.id);
+          setCtxMenu(null);
+          setObjMenu({ kind: "drawing", id: hit.drawing.id, x: e.clientX, y: e.clientY });
+          return;
+        }
+        if (hit?.avwapId) {
+          useStore.getState().selectIndicator(hit.avwapId);
+          setCtxMenu(null);
+          setObjMenu({ kind: "avwap", id: hit.avwapId, x: e.clientX, y: e.clientY });
+          return;
+        }
+        // 2) empty chart space -> the existing footprint menu, with price/time under the cursor
+        let price: number | null = null;
+        let time: number | null = null;
+        if (chart && series) {
+          const t = chart.timeScale().coordinateToTime(local.x);
           time = typeof t === "number" ? t * 1000 : null;
-          const p = series.coordinateToPrice(e.clientY - r.top);
+          const p = series.coordinateToPrice(local.y);
           price = p == null ? null : (p as number);
         }
+        setObjMenu(null);
         setCtxMenu({ x: e.clientX, y: e.clientY, price, time });
       }}
     >
@@ -298,6 +324,12 @@ export default function FootprintChart() {
           onResetView={resetView}
           onClose={() => setCtxMenu(null)}
         />
+      )}
+      {objMenu?.kind === "drawing" && (
+        <DrawingObjectMenu drawingId={objMenu.id} x={objMenu.x} y={objMenu.y} onClose={() => setObjMenu(null)} />
+      )}
+      {objMenu?.kind === "avwap" && (
+        <IndicatorContextMenu indicatorId={objMenu.id} x={objMenu.x} y={objMenu.y} onClose={() => setObjMenu(null)} />
       )}
     </div>
   );

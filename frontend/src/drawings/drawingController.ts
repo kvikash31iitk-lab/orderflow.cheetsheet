@@ -55,7 +55,7 @@ export function createDrawingController(opts: {
   host: HTMLDivElement;
   chart: IChartApi;
   series: FootprintSeriesApi;
-}): { dispose: () => void } {
+}): { dispose: () => void; pickObjectAt: (local: Px) => { drawing: DrawingObject | null; avwapId: string | null } } {
   const { host, chart, series } = opts;
 
   let draft: DrawingObject | null = null;
@@ -506,7 +506,16 @@ export function createDrawingController(opts: {
   syncPanAndCursor();
   requestUpdate();
 
+  // right-click hit-test for the chart context menu: same pick logic as left-click selection,
+  // topmost drawing first, then an Anchored VWAP line. No mutation, no gesture.
+  const pickObjectAt = (local: Px): { drawing: DrawingObject | null; avwapId: string | null } => {
+    const drawing = pickAt(local);
+    if (drawing) return { drawing, avwapId: null };
+    return { drawing: null, avwapId: pickAvwapAt(local) };
+  };
+
   return {
+    pickObjectAt,
     dispose() {
       host.removeEventListener("pointerdown", onPointerDown);
       host.removeEventListener("pointermove", onPointerMove);
