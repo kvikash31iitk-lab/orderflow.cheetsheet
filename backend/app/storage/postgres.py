@@ -353,3 +353,98 @@ class PostgresRepo:
             "cells": json.loads(r["cells"]), "signals": json.loads(r["signals"]),
             "closed": True,
         }
+
+    # ------------------------------------------------------------- workspaces
+    # Workspace/layout presets (Phase 3B). The API layer validates the payload (size + forbidden
+    # live-data keys) BEFORE these run; this layer only persists JSON and never executes anything.
+    _WS_COLS = ("id,name,description,profile,version,preset_json,is_default,is_archived,created_at,updated_at")
+
+    @staticmethod
+    def _row_to_workspace(r) -> dict:
+        return {
+            "id": r["id"], "name": r["name"], "description": r["description"],
+            "profile": r["profile"], "version": r["version"],
+            "isDefault": r["is_default"], "isArchived": r["is_archived"],
+            "createdAt": r["created_at"], "updatedAt": r["updated_at"],
+            "preset": json.loads(r["preset_json"]),
+        }
+
+    async def list_workspace_presets(self, profile: Optional[str] = None,
+                                     include_archived: bool = False) -> list[dict]:
+        if not self.enabled:
+            return []
+        clauses: list[str] = []
+        params: list = []
+        if not include_archived:
+            clauses.append("is_archived = FALSE")
+        if profile:
+            params.append(profile)
+            clauses.append(f"profile = ${len(params)}")
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        async with self.pool.acquire() as con:
+            rows = await con.fetch(
+                f"SELECT {self._WS_COLS} FROM workspace_presets{where} ORDER BY updated_at DESC", *params)
+        return [self._row_to_workspace(r) for r in rows]
+
+    async def get_workspace_preset(self, preset_id: str) -> Optional[dict]:
+        if not self.enabled:
+            return None
+        async with self.pool.acquire() as con:
+            r = await con.fetchrow(
+                f"SELECT {self._WS_COLS} FROM workspace_presets WHERE id=$1", preset_id)
+        return self._row_to_workspace(r) if r else None
+
+    async def workspace_exists(self, preset_id: str) -> bool:
+        if not self.enabled:
+            return False
+        async with self.pool.acquire() as con:
+            r = await con.fetchrow("SELECT 1 FROM workspace_presets WHERE id=$1", preset_id)
+        return r is not None
+
+    async def create_workspace_preset(self, preset: dict) -> Optional[dict]:
+        if not self.enabled:
+            return None
+        async with self.pool.acquire() as con:
+            r = await con.fetchrow(
+                f"INSERT INTO workspace_presets(id,name,description,profile,version,preset_json,"
+                f"is_default,is_archived,created_at,updated_at) "
+                f"VALUES($1,$2,$3,$4,$5,$6::jsonb,FALSE,FALSE,$7,$8) RETURNING {self._WS_COLS}",
+                preset["id"], preset["name"], preset.get("description"),
+                preset.get("profile") or "Default", int(preset.get("version") or 1),
+                json.dumps(preset), int(preset.get("createdAt") or 0), int(preset.get("updatedAt") or 0))
+        return self._row_to_workspace(r) if r else None
+
+    async def update_workspace_preset(self, preset_id: str, preset: dict) -> Optional[dict]:
+        if not self.enabled:
+            return None
+        async with self.pool.acquire() as con:
+            r = await con.fetchrow(
+                f"UPDATE workspace_presets SET name=$2,description=$3,profile=$4,version=$5,"
+                f"preset_json=$6::jsonb,updated_at=$7,is_archived=FALSE WHERE id=$1 RETURNING {self._WS_COLS}",
+                preset_id, preset["name"], preset.get("description"),
+                preset.get("profile") or "Default", int(preset.get("version") or 1),
+                json.dumps(preset), int(preset.get("updatedAt") or 0))
+        return self._row_to_workspace(r) if r else None
+
+    async def archive_workspace_preset(self, preset_id: str) -> bool:
+        """Soft delete only — never hard-deletes. Returns True if a live row was archived."""
+        if not self.enabled:
+            return False
+        async with self.pool.acquire() as con:
+            r = await con.fetchrow(
+                "UPDATE workspace_presets SET is_archived=TRUE,is_default=FALSE "
+                "WHERE id=$1 AND is_archived=FALSE RETURNING id", preset_id)
+        return r is not None
+
+    async def set_default_workspace_preset(self, preset_id: str) -> bool:
+        """Mark one preset default and unset every other (global default — this backend has no users).
+        Returns True if the target exists and is not archived."""
+        if not self.enabled:
+            return False
+        async with self.pool.acquire() as con, con.transaction():
+            exists = await con.fetchrow(
+                "SELECT 1 FROM workspace_presets WHERE id=$1 AND is_archived=FALSE", preset_id)
+            if exists is None:
+                return False
+            await con.execute("UPDATE workspace_presets SET is_default=(id=$1)", preset_id)
+        return True

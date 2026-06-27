@@ -2,6 +2,7 @@ import type { AlertMsg, Fill, FootprintCandle, Order, Position, ResearchReport, 
 import type {
   Sc1Candidate, Sc1Coverage, Sc1ExitReport, Sc1HistoricalCoverage, Sc1Job, Sc1Page, Sc1RunReport, Sc1SweepReport, Sc1Trade,
 } from "../types/sc1research";
+import type { RemoteWorkspaceRow, WorkspacePresetV1 } from "../workspace/types";
 
 export interface TradeOrderBody {
   symbol: string;
@@ -40,6 +41,34 @@ async function j<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(`${path} -> ${res.status}${detail}`);
   }
   return res.json() as Promise<T>;
+}
+
+// Status-aware variant for the workspace sync layer: never throws, returns an envelope so the caller
+// can distinguish offline/unreachable (status 0), missing route / PG down (404/503), conflict (409),
+// and validation (422/413) — and gracefully fall back to local-only when the backend isn't there.
+export interface ApiResult<T> {
+  ok: boolean;
+  status: number; // 0 = network error / backend unreachable
+  data?: T;
+  detail?: string;
+}
+async function jStatus<T>(path: string, init?: RequestInit): Promise<ApiResult<T>> {
+  try {
+    const res = await fetch(`${API}${path}`, { headers: { "Content-Type": "application/json" }, ...init });
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch {
+      /* empty / non-JSON body */
+    }
+    if (!res.ok) {
+      const d = (body as { detail?: unknown } | undefined)?.detail;
+      return { ok: false, status: res.status, detail: typeof d === "string" ? d : d ? JSON.stringify(d) : "" };
+    }
+    return { ok: true, status: res.status, data: body as T };
+  } catch (e) {
+    return { ok: false, status: 0, detail: e instanceof Error ? e.message : "network error" };
+  }
 }
 
 export const api = {
@@ -106,6 +135,17 @@ export const api = {
   sc1JobTrades: (id: string, q: { page?: number; size?: number; exitModel?: string; klass?: string; side?: string; result?: string } = {}) =>
     j<Sc1Page<Sc1Trade>>(`/api/research/sc1/jobs/${encodeURIComponent(id)}/trades?` +
       new URLSearchParams(Object.entries(q).filter(([, v]) => v != null && v !== "").map(([k, v]) => [k, String(v)])).toString()),
+
+  // workspace sync (Phase 3B) — status-aware so the UI degrades to local-only when offline.
+  workspacesList: () => jStatus<{ presets: RemoteWorkspaceRow[] }>("/api/workspaces"),
+  workspaceCreate: (preset: WorkspacePresetV1) =>
+    jStatus<RemoteWorkspaceRow>("/api/workspaces", { method: "POST", body: JSON.stringify(preset) }),
+  workspaceUpdate: (id: string, preset: WorkspacePresetV1) =>
+    jStatus<RemoteWorkspaceRow>(`/api/workspaces/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(preset) }),
+  workspaceDelete: (id: string) =>
+    jStatus<{ ok: boolean; archived: string }>(`/api/workspaces/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  workspaceSetDefault: (id: string) =>
+    jStatus<{ ok: boolean; default: string }>(`/api/workspaces/${encodeURIComponent(id)}/default`, { method: "POST" }),
 
   // simulated trading
   tradeOrder: (body: TradeOrderBody) =>

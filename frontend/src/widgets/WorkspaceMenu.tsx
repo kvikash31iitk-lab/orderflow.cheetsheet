@@ -1,12 +1,28 @@
-// Workspace dropdown for the header toolbar (Phase 3A). Compact menu to save / update / manage / import
-// / export workspaces and reset the layout to factory. Opens the WorkspaceManagerModal for the heavy UI.
+// Workspace dropdown for the header toolbar (Phase 3A + 3B sync). Compact menu to save / update /
+// manage / import / export / sync workspaces and reset the layout to factory. Opens the
+// WorkspaceManagerModal for the heavy UI. Shows a subtle cloud sync indicator.
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Download, LayoutDashboard, RotateCcw, Save, Settings2, Upload } from "lucide-react";
+import { ChevronDown, Cloud, CloudOff, CloudUpload, Download, LayoutDashboard, RefreshCw, RotateCcw, Save, Settings2, Upload } from "lucide-react";
 import { useStore } from "../store/useStore";
 import { useWorkspaceStore } from "../workspace/useWorkspaceStore";
 import { FACTORY_PRESETS, isFactoryId } from "../workspace/factory";
 import { captureWorkspaceSnapshot } from "../workspace/capture";
+import type { SyncStatus } from "../workspace/types";
 import WorkspaceManagerModal from "./WorkspaceManagerModal";
+
+// Subtle cloud glyph for the header button; hidden until sync has actually been used.
+function SyncGlyph({ status }: { status: SyncStatus }) {
+  if (status === "local") return null;
+  const map: Record<Exclude<SyncStatus, "local">, { Icon: typeof Cloud; cls: string }> = {
+    syncing: { Icon: RefreshCw, cls: "text-accent animate-spin" },
+    synced: { Icon: Cloud, cls: "text-flow-buyHi" },
+    offline: { Icon: CloudOff, cls: "text-terminal-muted" },
+    error: { Icon: CloudOff, cls: "text-flow-sellHi" },
+    conflict: { Icon: Cloud, cls: "text-amber-500" },
+  };
+  const { Icon, cls } = map[status];
+  return <Icon size={11} className={`shrink-0 ${cls}`} />;
+}
 
 function copyText(text: string) {
   try {
@@ -59,6 +75,9 @@ export default function WorkspaceMenu() {
   const activeId = useWorkspaceStore((s) => s.activeId);
   const saveCurrentAs = useWorkspaceStore((s) => s.saveCurrentAs);
   const updatePreset = useWorkspaceStore((s) => s.updatePreset);
+  const syncStatus = useWorkspaceStore((s) => s.syncStatus);
+  const pullRemote = useWorkspaceStore((s) => s.pullRemote);
+  const pushToCloud = useWorkspaceStore((s) => s.pushToCloud);
   const resetWorkspaceLayout = useStore((s) => s.resetWorkspaceLayout);
 
   const active = activeId ? [...FACTORY_PRESETS, ...presets].find((p) => p.id === activeId) : undefined;
@@ -106,6 +125,7 @@ export default function WorkspaceMenu() {
       >
         <LayoutDashboard size={14} className="shrink-0 text-terminal-muted" />
         <span className="truncate">{active ? active.name : "Workspace"}</span>
+        <SyncGlyph status={syncStatus} />
         <ChevronDown size={12} className="shrink-0" />
       </button>
 
@@ -153,6 +173,14 @@ export default function WorkspaceMenu() {
                     close();
                   }}
                 />
+                <div className="my-1 h-px bg-terminal-border" />
+                <Row
+                  icon={<CloudUpload size={13} />}
+                  label={canUpdate ? `Sync “${active?.name}” to cloud` : "Sync current to cloud"}
+                  disabled={!canUpdate}
+                  onClick={() => { void pushToCloud(activeId!); close(); }}
+                />
+                <Row icon={<RefreshCw size={13} />} label="Pull from cloud" onClick={() => { void pullRemote(); close(); }} />
                 <div className="my-1 h-px bg-terminal-border" />
                 {confirmReset ? (
                   <div className="px-3 py-1.5">

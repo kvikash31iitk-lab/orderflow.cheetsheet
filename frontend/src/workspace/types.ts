@@ -55,8 +55,42 @@ export interface WorkspacePresetV1 {
   createdAt: number;
   updatedAt: number;
   builtin?: boolean; // factory preset (defined in code; cannot be renamed/deleted/overwritten)
+  profile?: string; // soft scope/collection label (Phase 3B); defaults to "Default"
+  description?: string | null;
   snapshot: WorkspaceSnapshot;
 }
+
+export const DEFAULT_PROFILE = "Default";
+
+// ----- Phase 3B: backend sync -----
+// Global sync indicator for the whole workspace store.
+export type SyncStatus = "local" | "syncing" | "synced" | "offline" | "error" | "conflict";
+
+// A row as returned by the backend GET /api/workspaces (server metadata + the embedded preset).
+export interface RemoteWorkspaceRow {
+  id: string;
+  name: string;
+  description: string | null;
+  profile: string;
+  version: number;
+  isDefault: boolean;
+  isArchived: boolean;
+  createdAt: number;
+  updatedAt: number;
+  preset: WorkspacePresetV1;
+}
+
+// A same-id divergence between the local copy and the server copy (different updatedAt). Surfaced to
+// the user (Keep local / Use remote / Duplicate) — never silently overwritten.
+export interface WorkspaceConflict {
+  id: string;
+  local: WorkspacePresetV1;
+  remote: WorkspacePresetV1;
+  remoteUpdatedAt: number;
+}
+
+// Where a preset lives, for the manager badges.
+export type PresetOrigin = "factory" | "local" | "synced";
 
 export interface ApplyWorkspaceOptions {
   // when true, also REPLACE the current indicators/AVWAPs/drawings with the preset's objects.
@@ -70,6 +104,8 @@ export interface PersistedWorkspaces {
   presets: WorkspacePresetV1[];
   activeId: string | null;
   defaultId: string | null;
+  // id -> last-known remote updatedAt, so the "synced" badge survives a reload without a re-pull.
+  synced?: Record<string, number>;
 }
 
 export const MAX_PRESETS = 20;

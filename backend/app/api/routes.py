@@ -1,8 +1,10 @@
 """REST API: snapshots, scanner, alerts, replay control, research, metadata."""
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from ..config import TIMEFRAME_MINUTES, Settings, is_seconds_timeframe, settings
 from ..orderflow import research
@@ -447,3 +449,159 @@ async def trade_flatten(req: Request, body: TradeFlatten) -> dict:
 @router.get("/trade/state")
 async def trade_state(req: Request) -> dict:
     return _pipeline(req).broker.state()
+
+
+# ----------------------------------------------------------------- workspaces
+# Backend-synced workspace/layout presets (Phase 3B). This backend has NO auth, so presets are GLOBAL
+# (shared by all clients); `profile` is a soft scope label. The frontend keeps localStorage as the
+# offline source of truth — if PG is down these endpoints 503 and the UI falls back to local-only.
+# We persist JSON only and NEVER execute indicator source from a preset.
+WORKSPACE_SCHEMA_VERSION = 1
+WORKSPACE_MAX_BYTES = 2_000_000  # ~2 MB cap (mirrors the frontend guard)
+
+# Object KEYS that must never appear anywhere in a synced workspace payload — live market / account /
+# connection / secret data. We scan KEYS only (an indicator script may legitimately *mention* these
+# words in its text; that's a value, not a key, and is never executed here).
+_WORKSPACE_FORBIDDEN_KEYS = frozenset({
+    "candles", "candle", "ticks", "tick", "scanner", "alerts", "positions", "orders", "fills",
+    "pnl", "feedstatus", "feed_status", "connection", "connectionstate", "connection_state",
+    "apikey", "api_key", "token", "accesstoken", "access_token", "refreshtoken", "refresh_token",
+    "secret", "secrets", "password", "credential", "credentials", "bearer", "authorization",
+})
+
+
+def _scan_forbidden_keys(obj, parent: str | None = None, depth: int = 0) -> str | None:
+    """Recursively return the first forbidden object key found (case-insensitive), else None.
+    Bounded depth guards against a pathologically nested payload.
+
+    One deliberate exception: `panes.scanner` is a legitimate boolean UI flag (show/hide the SCANNER
+    PANE), not scanner data, so it is allowed only directly under a `panes` object. Every other use of
+    a forbidden word as a key — at any depth — is rejected."""
+    if depth > 40:
+        raise HTTPException(status_code=422, detail="workspace payload nested too deep")
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if isinstance(k, str) and k.lower() in _WORKSPACE_FORBIDDEN_KEYS:
+                # the ONLY allowed forbidden-word key is panes.scanner, and only as a boolean UI flag —
+                # never an object/array (which could smuggle scanner data past the key scan).
+                allowed = k.lower() == "scanner" and (parent or "").lower() == "panes" and isinstance(v, bool)
+                if not allowed:
+                    return k
+            found = _scan_forbidden_keys(v, k if isinstance(k, str) else parent, depth + 1)
+            if found:
+                return found
+    elif isinstance(obj, list):
+        for v in obj:
+            found = _scan_forbidden_keys(v, parent, depth + 1)
+            if found:
+                return found
+    return None
+
+
+def _validate_workspace_preset(preset: dict) -> None:
+    """Reject anything that isn't a safe WorkspacePresetV1: wrong version, missing required fields,
+    oversized, or carrying any live/market/account/secret key. Raises HTTPException."""
+    if not isinstance(preset, dict):
+        raise HTTPException(status_code=422, detail="workspace preset must be an object")
+    if preset.get("version") != WORKSPACE_SCHEMA_VERSION:
+        raise HTTPException(status_code=422,
+                            detail=f"unsupported workspace version {preset.get('version')!r} (expected {WORKSPACE_SCHEMA_VERSION})")
+    if not isinstance(preset.get("id"), str) or not preset["id"]:
+        raise HTTPException(status_code=422, detail="workspace preset id is required")
+    if not isinstance(preset.get("name"), str) or not preset["name"].strip():
+        raise HTTPException(status_code=422, detail="workspace preset name is required")
+    if not isinstance(preset.get("snapshot"), dict):
+        raise HTTPException(status_code=422, detail="workspace preset snapshot is required")
+    try:
+        size = len(json.dumps(preset).encode("utf-8"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="workspace preset is not serializable")
+    if size > WORKSPACE_MAX_BYTES:
+        raise HTTPException(status_code=413,
+                            detail=f"workspace preset too large ({size} bytes > {WORKSPACE_MAX_BYTES})")
+    bad = _scan_forbidden_keys(preset)
+    if bad:
+        raise HTTPException(status_code=422, detail=f"workspace preset contains a forbidden field: {bad!r}")
+
+
+class WorkspacePresetBody(BaseModel):
+    # extra="forbid" rejects unknown TOP-LEVEL fields (snapshot is a free dict, scanned separately).
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    name: str
+    version: int
+    createdAt: int
+    updatedAt: int
+    snapshot: dict
+    description: str | None = None
+    profile: str = "Default"
+    builtin: bool = False
+
+
+def _ws_pg(req: Request):
+    """The workspace store, or a 503 if PG isn't connected (the frontend then stays local-only)."""
+    pg = _pipeline(req).pg
+    if not getattr(pg, "enabled", False):
+        raise HTTPException(status_code=503, detail="workspace sync unavailable (no database)")
+    return pg
+
+
+@router.get("/workspaces")
+async def list_workspaces(req: Request, profile: str | None = None) -> dict:
+    # Routed through _ws_pg so a disconnected DB returns 503 — the client treats that as "offline" and
+    # keeps its local presets. (Returning an ambiguous empty list here would look like "no presets" and
+    # make the client wrongly demote every synced preset to local-only.)
+    pg = _ws_pg(req)
+    rows = await pg.list_workspace_presets(profile=profile, include_archived=False)
+    return {"presets": rows}
+
+
+@router.get("/workspaces/{preset_id}")
+async def get_workspace(req: Request, preset_id: str) -> dict:
+    row = await _pipeline(req).pg.get_workspace_preset(preset_id)
+    if not row or row.get("isArchived"):
+        raise HTTPException(status_code=404, detail="workspace preset not found")
+    return row
+
+
+@router.post("/workspaces")
+async def create_workspace(req: Request, body: WorkspacePresetBody) -> dict:
+    preset = body.model_dump()
+    _validate_workspace_preset(preset)
+    pg = _ws_pg(req)
+    if await pg.workspace_exists(preset["id"]):
+        raise HTTPException(status_code=409, detail="workspace preset already exists; use PUT to update")
+    row = await pg.create_workspace_preset(preset)
+    if row is None:
+        raise HTTPException(status_code=503, detail="workspace sync unavailable")
+    return row
+
+
+@router.put("/workspaces/{preset_id}")
+async def update_workspace(req: Request, preset_id: str, body: WorkspacePresetBody) -> dict:
+    preset = body.model_dump()
+    preset["id"] = preset_id  # path id wins; keep the stored JSON's id consistent with the row
+    _validate_workspace_preset(preset)
+    pg = _ws_pg(req)
+    row = await pg.update_workspace_preset(preset_id, preset)
+    if row is None:
+        raise HTTPException(status_code=404, detail="workspace preset not found")
+    return row
+
+
+@router.delete("/workspaces/{preset_id}")
+async def delete_workspace(req: Request, preset_id: str) -> dict:
+    pg = _ws_pg(req)
+    ok = await pg.archive_workspace_preset(preset_id)  # soft delete only
+    if not ok:
+        raise HTTPException(status_code=404, detail="workspace preset not found")
+    return {"ok": True, "archived": preset_id}
+
+
+@router.post("/workspaces/{preset_id}/default")
+async def default_workspace(req: Request, preset_id: str) -> dict:
+    pg = _ws_pg(req)
+    ok = await pg.set_default_workspace_preset(preset_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="workspace preset not found")
+    return {"ok": True, "default": preset_id}

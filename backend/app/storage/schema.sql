@@ -108,3 +108,21 @@ CREATE TABLE IF NOT EXISTS alerts (
 );
 CREATE INDEX IF NOT EXISTS ix_alerts_ts ON alerts (ts DESC);
 CREATE INDEX IF NOT EXISTS ix_alerts_symbol ON alerts (symbol, ts DESC);
+
+-- Workspace / layout presets (Phase 3B backend sync). Frontend-authored WorkspacePresetV1 JSON only —
+-- never candles/ticks/scanner/alerts/positions/orders/fills/feed-state/secrets (the API rejects those).
+-- No auth on this backend, so presets are GLOBAL (shared by all clients); `profile` is a soft scope label.
+-- `id` is the client-supplied preset id (ws_*) so a pushed local preset keeps its identity across devices.
+CREATE TABLE IF NOT EXISTS workspace_presets (
+    id          TEXT PRIMARY KEY,
+    name        TEXT    NOT NULL,
+    description TEXT,
+    profile     TEXT    NOT NULL DEFAULT 'Default',
+    version     INTEGER NOT NULL DEFAULT 1,
+    preset_json JSONB   NOT NULL,
+    is_default  BOOLEAN NOT NULL DEFAULT FALSE,
+    is_archived BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at  BIGINT  NOT NULL,
+    updated_at  BIGINT  NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_workspace_presets_active ON workspace_presets (is_archived, updated_at DESC);
